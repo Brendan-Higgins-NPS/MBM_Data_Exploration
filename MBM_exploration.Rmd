@@ -1,0 +1,183 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r read in data}
+obs <- read.csv("data/KBAYKATMKEFJ_2006-2023_Summer_MBM_Observations.csv")
+transects <- read.csv("data/KBAYKATMKEFJ_2006-2023_Summer_MBM_Transects.csv")
+```
+
+```{r make a single df}
+
+obs <- obs %>%
+  mutate(
+    site = substr(TripID, 1, 4),
+    year = substr(TripID, 8, 11)
+  ) %>%
+  filter()
+
+species <- unique(obs$Detect_SpeciesCode)
+sites <- unique(obs$site)
+years <- unique(obs$year)
+
+expand_grid(years, sites, species)
+
+#make transects by site
+transects <- transects  %>%
+  mutate(
+    site = substr(TripID, 1, 4),
+    year = substr(TripID, 8, 11)
+  )
+
+#might need to eliminate some transects later.... the pelagic ones seem problematic effort wise
+unique_transects <- transects %>%
+  filter(TransType == "COASTAL") %>%
+  distinct(site, year, TXNumber)
+
+```
+
+try new plan
+```{r}
+obs_summary <-obs %>%
+  group_by(year, site, Detect_SpeciesCode) %>%
+  summarise(count = sum(Count))
+
+transects_summary <- transects %>% 
+  group_by(year, site) %>%
+  summarise(length = sum(Length_km),
+            area = sum(Area_Sampled_km2))
+
+obs_summary <- left_join(obs_summary, transects_summary, by = c("site", "year")) %>%
+  rename(species = Detect_SpeciesCode) %>%
+  mutate(density = count/area)
+
+
+years <- unique(obs_summary$year)
+sites <- unique(obs_summary$site)
+species <- unique(obs_summary$species)
+
+df <- expand_grid(years, sites, species) %>%
+  rename(year = years,
+         site = sites) %>%
+  left_join(., obs_summary) %>%
+  select(!c(count, length, area)) %>%
+  mutate(density = replace_na(density, 0))
+```
+find the most common birds to look at
+```{r}
+birds <- obs %>%
+  filter(!Detect_SpeciesCode %in% c("UNCO")) %>%
+  group_by(Detect_SpeciesCode) %>%
+  summarise(count = sum(Count)) %>%
+  arrange(desc(count)) %>%
+  head(20) %>% #change this number for more or less species
+  pull(Detect_SpeciesCode)
+```
+
+```{r}
+df %>%
+  filter(species %in% birds) %>%
+  #mutate(density = scale(density)) %>%
+  ggplot() +
+  geom_path(aes(year, density, colour = site, group = site)) +
+  facet_wrap(~species, scales = "free_y") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+df %>%
+  filter(species %in% birds) %>%
+  mutate(density = scale(density)) %>%
+  ggplot() +
+  geom_path(aes(year, density, colour = species, group = species)) +
+  facet_wrap(~site, scales = "free_y", nrow = 3) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+df %>%
+  filter(species == "BLOY") %>%
+  #mutate(density = scale(density)) %>%
+  ggplot() +
+  geom_path(aes(year, density, colour = site, group = site)) +
+  facet_wrap(~species, scales = "free_y") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+mussel_counts <- read.csv("data/KATMKEFJWPWS_2008-2025_Mytilus_20mm_Count.csv")
+mussel_size <- read.csv("data/KATMKEFJWPWS_2008-2025_Mytilus_20mm_Size.csv")
+seastar_counts <- read.csv("data/KATMKEFJWPWS_2006-2025_Sea_Star_Count.csv")
+```
+
+```{r}
+mussel_counts %>%
+  filter(!BlockName %in% c("EPWS", "NPWS")) %>%
+  mutate(Count = as.numeric(Count)) %>%
+  group_by(BlockName, SiteName, YearSample) %>%
+  summarise(avg = mean(Count)) %>%
+  ggplot() +
+  geom_point(aes(YearSample, avg, group = SiteName, colour = SiteName)) +
+  facet_wrap(~BlockName, nrow = 3) +
+  labs(title = "Mussel Counts")
+```
+
+```{r}
+mussel_size %>%
+  filter(!BlockName %in% c("EPWS", "NPWS")) %>%
+  mutate(Size = as.numeric(Size)) %>%
+  group_by(BlockName, SiteName, YearSample) %>%
+  summarise(avg = mean(Size)) %>%
+  ggplot() +
+  geom_point(aes(YearSample, avg, group = SiteName, colour = SiteName)) +
+  facet_wrap(~BlockName, nrow = 3) +
+  labs(title = "Mussel Size")
+```
+
+```{r}
+mussel_counts %>%
+  filter(!BlockName %in% c("EPWS", "NPWS")) %>%
+  mutate(Count = as.numeric(Count)) %>%
+  group_by(BlockName, SiteName, YearSample) %>%
+  summarise(avg = mean(Count)) %>%
+  ggplot() +
+  geom_boxplot(aes(YearSample, avg, group = YearSample)) +
+  facet_wrap(~BlockName, nrow = 3, scales = "free_y") +
+  labs(title = "Mussel Counts",
+       y = "Count")
+```
+
+```{r}
+mussel_size %>%
+  filter(!BlockName %in% c("EPWS", "NPWS")) %>%
+  mutate(Size = as.numeric(Size)) %>%
+  group_by(BlockName, SiteName, YearSample) %>%
+  summarise(avg = mean(Size)) %>%
+  ggplot() +
+  geom_boxplot(aes(YearSample, avg, group = YearSample)) +
+  facet_wrap(~BlockName, nrow = 3, scales = "free_y") +
+  labs(title = "Mussel Size",
+       y = "Size (mm)")
+```
+noww check out the seastars
+```{r}
+seastar_counts %>%
+  mutate(site = substr(SiteID, 1, 3)) %>%
+  group_by(Year, site, Species) %>%
+  summarise(avg_density = mean(Density_individual200SqM)) %>%
+  ggplot() +
+  geom_path(aes(Year, avg_density, color = Species)) +
+  facet_wrap(~site, nrow = 3, scales = "free_y")
+```
+
+```{r}
+seastar_counts %>%
+  mutate(site = substr(SiteID, 1, 3)) %>%
+  group_by(Year, site, Species) %>%
+  summarise(avg_density = mean(Density_individual200SqM)) %>%
+  ggplot() +
+  geom_smooth(aes(Year, avg_density)) +
+  facet_wrap(~site, nrow = 3, scales = "free_y")
+```
