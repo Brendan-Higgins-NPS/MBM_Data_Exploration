@@ -3,8 +3,9 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-```{r}
+```{r warning=FALSE}
 library(tidyverse)
+library(janitor)
 ```
 
 ```{r read in data}
@@ -13,7 +14,7 @@ transects <- read.csv("data/KBAYKATMKEFJ_2006-2023_Summer_MBM_Transects.csv")
 ```
 
 ```{r make a single df}
-
+#make year and site columns from the trip ID
 obs <- obs %>%
   mutate(
     site = substr(TripID, 1, 4),
@@ -25,8 +26,6 @@ species <- unique(obs$Detect_SpeciesCode)
 sites <- unique(obs$site)
 years <- unique(obs$year)
 
-expand_grid(years, sites, species)
-
 #make transects by site
 transects <- transects  %>%
   mutate(
@@ -34,39 +33,59 @@ transects <- transects  %>%
     year = substr(TripID, 8, 11)
   )
 
-#might need to eliminate some transects later.... the pelagic ones seem problematic effort wise
-unique_transects <- transects %>%
-  filter(TransType == "COASTAL") %>%
-  distinct(site, year, TXNumber)
+#identify pelagic transects
+pelagic_transects <- transects %>%
+  filter(TransType == "PELAGIC") %>%
+  pull(TXNumber) %>%
+  unique()
 
+#now remove pelagic transects from bird obs
+obs <- obs %>% filter(!TXNumber %in% pelagic_transects)
 ```
 
-try new plan
+link obs with transect effort
 ```{r}
+#sum species total for each survey (year and site)
 obs_summary <-obs %>%
   group_by(year, site, Detect_SpeciesCode) %>%
-  summarise(count = sum(Count))
+  summarise(count = sum(Count)) %>%
+  rename(species = Detect_SpeciesCode)
 
+#find all unique combinations of year and site then repeat the bird list for each of them
+sampling_events <- obs %>%
+  distinct(year, site)
+
+species_df <- species %>% 
+  data.frame() %>%
+  rename(species = ".")
+
+species_list <- list()
+
+for(i in 1:nrow(sampling_events)) {
+  event <- sampling_events[i,]
+  species_df$year <- event$year
+  species_df$site <- event$site
+  
+  species_list[[i]] <- species_df
+}
+
+#convert list to dataframe
+sampling_events <- bind_rows(species_list)
+
+#this adds in zeros for the species not observed on each survey but doesnt make up surveys that didn't happen (as opposed to expand_grid)
+obs_summary <- left_join(sampling_events, obs_summary) %>%
+  mutate(count = replace_na(count, 0))
+
+#this adds up all the area and distance sampled in each year
 transects_summary <- transects %>% 
   group_by(year, site) %>%
   summarise(length = sum(Length_km),
             area = sum(Area_Sampled_km2))
 
-obs_summary <- left_join(obs_summary, transects_summary, by = c("site", "year")) %>%
-  rename(species = Detect_SpeciesCode) %>%
-  mutate(density = count/area)
-
-
-years <- unique(obs_summary$year)
-sites <- unique(obs_summary$site)
-species <- unique(obs_summary$species)
-
-df <- expand_grid(years, sites, species) %>%
-  rename(year = years,
-         site = sites) %>%
-  left_join(., obs_summary) %>%
-  select(!c(count, length, area)) %>%
-  mutate(density = replace_na(density, 0))
+#add the effort to the counts and calculate density
+bird_densities <- left_join(obs_summary, transects_summary, by = c("site", "year")) %>%
+  mutate(density = count/area) %>%
+  relocate(species, .after = site)
 ```
 find the most common birds to look at
 ```{r}
@@ -80,16 +99,17 @@ birds <- obs %>%
 ```
 
 ```{r}
-df %>%
+bird_densities %>%
   filter(species %in% birds) %>%
   #mutate(density = scale(density)) %>%
   ggplot() +
   geom_path(aes(year, density, colour = site, group = site)) +
+  geom_point(aes(year, density, colour = site, group = site)) +
   facet_wrap(~species, scales = "free_y") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 ```{r}
-df %>%
+bird_densities %>%
   filter(species %in% birds) %>%
   mutate(density = scale(density)) %>%
   ggplot() +
@@ -98,7 +118,7 @@ df %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 ```{r}
-df %>%
+bird_densities %>%
   filter(species == "BLOY") %>%
   #mutate(density = scale(density)) %>%
   ggplot() +
@@ -178,6 +198,119 @@ seastar_counts %>%
   group_by(Year, site, Species) %>%
   summarise(avg_density = mean(Density_individual200SqM)) %>%
   ggplot() +
-  geom_smooth(aes(Year, avg_density)) +
-  facet_wrap(~site, nrow = 3, scales = "free_y")
+  geom_smooth(aes(Year, avg_density, group = site, color = site)) +
+  facet_wrap(~Species, nrow = 3, scales = "free_y")
 ```
+
+```{r}
+bird_densities %>%
+  group_by(year, site) %>%
+  summarise(avg_density = mean(density)) %>%
+  ggplot() +
+  geom_path(aes(year, avg_density, color = site, group = site)) +
+  labs(title = "all birds combined",
+       subtitle = "is this stupid?")
+```
+combine everything into a single data frame for plotting
+```{r}
+seastar_wide <- seastar_counts %>%
+  mutate(site = substr(SiteID, 1, 3),
+         site = case_when(site == "AKP" ~ "KATM",
+                          site == "PWS" ~ "WPWS",
+                          site == "KEP" ~ "KEFJ")) %>%
+  group_by(Year, site, Species) %>%
+  summarise(avg_density = mean(Density_individual200SqM)) %>%
+  pivot_wider(names_from = Species, values_from = avg_density) %>%
+  rename(year = Year)
+
+mussels_wide <- mussel_counts %>%
+  rename(site = BlockName,
+         year = YearSample) %>%
+  filter(!site %in% c("EPWS", "NPWS")) %>%
+  mutate(Count = as.numeric(Count)) %>%
+  group_by(site, year) %>%
+  summarise(avg_count = mean(Count, na.rm = T)) # check that this is ok and isnt getting rid of zeros
+
+birds_wide <- bird_densities %>%
+  select(!c(length, area, count)) %>%
+  pivot_wider(names_from = species, values_from = density) %>%
+  mutate(year = as.numeric(year))
+
+all_taxa <- left_join(birds_wide, seastar_wide, by = c("year", "site")) %>%
+  left_join(., mussels_wide, by = c("year", "site")) %>%
+  rename(mussel_count = avg_count) %>%
+  mutate(
+    across(
+      c(seq(3, ncol(.))),   
+      ~ scale(.)[,1]
+    )
+  ) %>%
+  rename_with(janitor::make_clean_names, .cols = 128:135)
+```
+
+```{r}
+all_taxa %>%
+  filter(site != "KBAY") %>%
+  select(year, site, mussel_count, BLOY, HADU, pycnopodia_helianthoides) %>%
+  pivot_longer(cols = !c(year, site), names_to = "species", values_to = "Abundance") %>%
+  ggplot() +
+  geom_path(aes(year, Abundance, color = species)) +
+  geom_point(aes(year, Abundance, color = species)) +
+  geom_hline(aes( yintercept = 0)) +
+  facet_wrap(~site, nrow = 3)
+```
+
+```{r}
+all_taxa %>%
+  ggplot() +
+  geom_point(aes(mussel_count, `Pisaster ochraceus`))
+```
+
+```{r}
+bloy_nest <- read.csv("data/KBAYKATMKEFJWPWS_2006-2025_blackOystercatcher_Transect_Summary.csv")
+
+bloy_nest %>%
+  group_by(Year, BlockName) %>%
+  summarise(avg_density = mean(as.numeric(NestDensity))) %>%
+  ggplot() +
+  geom_path(aes(Year, avg_density, color = BlockName))
+```
+```{r}
+isotopes <- read.csv("data/Isotope_data_all_regions_2014-2025.csv", fileEncoding='latin1')
+isotopes <- isotopes %>% select(!c(X, X.1, X.2))
+```
+
+```{r}
+isotopes %>%
+  mutate(Year = as.factor(Year)) %>%
+  ggplot() +
+  geom_jitter(aes(d15N...., d13C...., colour = Year), alpha = 0.4)
+  facet_wrap(~Year)
+```
+
+```{r}
+isotopes %>%
+  mutate(Year = as.factor(Year)) %>%
+  ggplot() +
+  geom_jitter(aes(d15N...., d13C...., colour = Species), alpha = 0.7) +
+  facet_wrap(~Year)
+```
+```{r}
+
+# Folder containing your .hobo files
+path <- "C:/Users/bhiggins/OneDrive - DOI/Documents/post_bath_hobo_2026/"
+
+# List all .hobo files
+hobo_files <- list.files(path, pattern = "\\.hobo$", full.names = TRUE)
+
+# Read each file into a list
+hobo_list <- lapply(hobo_files, read_hobo)
+
+# Combine all into one data frame
+hobo_all <- bind_rows(hobo_list)
+
+# Inspect
+print(hobo_all)
+
+```
+
