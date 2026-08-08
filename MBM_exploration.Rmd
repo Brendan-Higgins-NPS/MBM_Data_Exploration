@@ -263,7 +263,7 @@ all_taxa %>%
 ```{r}
 all_taxa %>%
   ggplot() +
-  geom_point(aes(mussel_count, `Pisaster ochraceus`))
+  geom_point(aes(mussel_count, pisaster_ochraceus))
 ```
 
 ```{r}
@@ -273,11 +273,13 @@ bloy_nest %>%
   group_by(Year, BlockName) %>%
   summarise(avg_density = mean(as.numeric(NestDensity))) %>%
   ggplot() +
-  geom_path(aes(Year, avg_density, color = BlockName))
+  geom_path(aes(Year, avg_density, color = BlockName)) +
+  labs(title = "BLOY Density")
 ```
 ```{r}
 isotopes <- read.csv("data/Isotope_data_all_regions_2014-2025.csv", fileEncoding='latin1')
 isotopes <- isotopes %>% select(!c(X, X.1, X.2))
+
 ```
 
 ```{r}
@@ -296,21 +298,587 @@ isotopes %>%
   facet_wrap(~Year)
 ```
 ```{r}
+isotopes %>%
+  filter(Species == "trossulus") %>%
+  mutate(Year = as.factor(Year)) %>%
+  ggplot() +
+  geom_jitter(aes(d15N...., d13C...., colour = Year), alpha = 0.9, size = 3) +
+    scale_x_continuous(limits = c(5, 10))
+```
+```{r}
+trossulus <-isotopes %>%
+  filter(Species == "trossulus") %>%
+  filter(!is.na(d15N....),
+         !is.na(d13C....)) %>%
+mutate(Year = as.factor(Year))
 
-# Folder containing your .hobo files
-path <- "C:/Users/bhiggins/OneDrive - DOI/Documents/post_bath_hobo_2026/"
+hulls <- trossulus %>%
+  group_by(Year) %>%
+  slice(chull(d15N...., d13C....))
 
-# List all .hobo files
-hobo_files <- list.files(path, pattern = "\\.hobo$", full.names = TRUE)
 
-# Read each file into a list
-hobo_list <- lapply(hobo_files, read_hobo)
+ggplot(trossulus) +
+  geom_jitter(aes(x = d15N...., y = d13C...., colour = Year),
+              alpha = 0.9, size = 3) +
+  geom_polygon(data = hulls,
+               aes(x = d15N...., y = d13C...., group = Year),
+               alpha = 0.2, colour = "black") +
+  scale_x_continuous(limits = c(5, 10)) +
+  facet_wrap(~Year)
+```
 
-# Combine all into one data frame
-hobo_all <- bind_rows(hobo_list)
+```{r}
+trossulus %>%
+  ggplot() +
+  geom_jitter(aes(d15N...., d13C...., colour = Region), alpha = 0.5, size = 3) +
+  facet_wrap(~Year) +
+  labs(title = "mussel isotopes")
+```
+```{r}
+isotopes %>%
+  filter(Sample.ID == "POM") %>%
+  ggplot() +
+  geom_jitter(aes(d15N...., d13C...., colour = Region), alpha = 0.5, size = 3) +
+  facet_wrap(~Year) +
+  labs(title = "POM")
+```
 
-# Inspect
-print(hobo_all)
 
+Limpet time!
+```{r}
+limpet_count <- read.csv("data/KATMKEFJWPWS_2010-2025_Limpet_Count.csv")
+limpet_size <- read.csv("data/KATMKEFJWPWS_2006-2025_Limpet_Size.csv")
+```
+
+```{r}
+limpet_count %>%
+  mutate(site = substr(SiteID, 1, 3),
+         site = case_when(site == "AKP" ~ "KATM",
+                          site == "PWS" ~ "WPWS",
+                          site == "KEP" ~ "KEFJ"),
+         Density = as.numeric(Density)) %>%
+  group_by(Year, site) %>%
+  summarise(Density = mean(Density, na.rm = T)) %>%
+  mutate(Density = scale(Density)[,1]) %>%
+  ggplot() +
+  geom_path(aes(Year, Density, color = site)) +
+  geom_point(aes(Year, Density, color = site)) +
+  labs(title = "limpet density")
+```
+
+The limpet abundances between KATM and KEFJ seem to trend oppositely 
+```{r}
+limpet_size %>%
+  mutate(site = substr(SiteID, 1, 3),
+         site = case_when(site == "AKP" ~ "KATM",
+                          site == "PWS" ~ "WPWS",
+                          site == "KEP" ~ "KEFJ"),
+         Limpet_Size_mm = as.numeric(Limpet_Size_mm)) %>%
+  group_by(Year, site) %>%
+  summarise(size_avg = mean(Limpet_Size_mm, na.rm = T)) %>%
+  #mutate(size_avg = scale(size_avg)[,1]) %>%
+  ggplot() +
+  geom_path(aes(Year, size_avg, color = site)) +
+  geom_point(aes(Year, size_avg, color = site)) +
+  labs(title = "limpet size")
+```
+
+but the size fluctuations seem to trend similarly between sites
+```{r}
+limpet_size %>%
+  mutate(site = substr(SiteID, 1, 3),
+         site = case_when(site == "AKP" ~ "KATM",
+                          site == "PWS" ~ "WPWS",
+                          site == "KEP" ~ "KEFJ"),
+         Limpet_Size_mm = as.numeric(Limpet_Size_mm)) %>%
+  group_by(Year, site, SiteName) %>%
+  summarise(size_avg = mean(Limpet_Size_mm, na.rm = T)) %>%
+  #mutate(size_avg = scale(size_avg)[,1]) %>%
+  ggplot() +
+  geom_path(aes(Year, size_avg, color = SiteName)) +
+  geom_point(aes(Year, size_avg, color = SiteName)) +
+  facet_wrap(~site, ncol = 1) +
+  labs(title = "limpet size by site") +
+  theme(legend.position = "none")
+```
+
+snails:
+```{r}
+snails <- read.csv("data/KATMKEFJWPWS_2006-2025_Nucella_Katharina_Lirabuccinum_Count.csv")
+```
+
+```{r}
+snails %>%
+  mutate(site = substr(SiteID, 1, 3),
+         site = case_when(site == "AKP" ~ "KATM",
+                          site == "PWS" ~ "WPWS",
+                          site == "KEP" ~ "KEFJ")) %>%
+  group_by(Year, Elevation_Position, site, SpeciesName) %>%
+  summarise(count = mean(Count)) %>%
+  ggplot() +
+  geom_path(aes(Year, count, color = SpeciesName)) +
+  geom_point(aes(Year, count, color = SpeciesName)) +
+  facet_grid(site~Elevation_Position) +
+  labs(title = "snail abundance")
+```
+
+check out the temperature data
+```{r message=FALSE}
+temperature <- list.files("data/temperature",
+                       pattern = "\\.csv$",
+                       full.names = TRUE) %>%
+  map_dfr(read_csv)
+
+#make month and year columns
+temperature$year <- year(temperature$date)
+temperature$month <- month(temperature$date)
+```
+
+```{r}
+temperature %>%
+  filter(exposure == "water",
+         tide_height == 0.5) %>%
+  ggplot() +
+  geom_path(aes(date, temperature, color = site)) 
+```
+
+```{r}
+temperature %>%
+  filter(exposure == "water",
+         month == 7,
+         tide_height == 0.5) %>%
+  ggplot() +
+  geom_boxplot(aes(year, temperature, group = year, color = block)) +
+  facet_wrap(~block, ncol =1)
+```
+```{r}
+temperature %>%
+  filter(exposure == "water",
+         month == 5,
+         tide_height == 0.5) %>%
+  group_by(year, block) %>%
+  summarise(avg_temp = mean(temperature)) %>%
+  ggplot() +
+  geom_path(aes(year, avg_temp, color = block)) +
+  geom_point(aes(year, avg_temp, color = block)) +
+  labs(title = "May Temp")
+```
+```{r}
+temperature %>%
+  filter(exposure == "water",
+         month == 6,
+         tide_height == 0.5) %>%
+  group_by(year, block) %>%
+  summarise(avg_temp = mean(temperature)) %>%
+  ggplot() +
+  geom_path(aes(year, avg_temp, color = block)) +
+  geom_point(aes(year, avg_temp, color = block)) +
+  labs(title = "June Temp")
+```
+```{r}
+temperature %>%
+  filter(exposure == "water",
+         month == 7,
+         tide_height == 0.5) %>%
+  group_by(year, block) %>%
+  summarise(avg_temp = mean(temperature)) %>%
+  ggplot() +
+  geom_path(aes(year, avg_temp, color = block)) +
+  geom_point(aes(year, avg_temp, color = block)) +
+  labs(title = "July Temp")
+```
+
+```{r}
+
+temperature %>%
+  filter(exposure == "water",
+         month %in% c(4,5,6,7,8,9),
+         tide_height == 0.5) %>%
+  mutate(month_name = factor(month.name[month],
+                             levels = month.name[4:9])) %>%
+  group_by(year, block, month_name) %>%
+  summarise(avg_temp = mean(temperature), .groups = "drop") %>%
+  ggplot() +
+  geom_path(aes(year, avg_temp, color = block)) +
+  geom_point(aes(year, avg_temp, color = block)) +
+  facet_wrap(~month_name)
+```
+
+```{r}
+temperature %>%
+  filter(exposure == "water",
+         month %in% c(10,11,12,1,2,3),
+         tide_height == 0.5) %>%
+  mutate(month_name = factor(month.name[month],
+                             levels = c("October","November","December",
+                                        "January","February","March"))) %>%
+  group_by(year, block, month_name) %>%
+  summarise(avg_temp = mean(temperature), .groups = "drop") %>%
+  ggplot() +
+  geom_path(aes(year, avg_temp, color = block)) +
+  geom_point(aes(year, avg_temp, color = block)) +
+  facet_wrap(~month_name)
+```
+```{r}
+winter_df <- temperature %>%
+  filter(exposure == "water",
+         month %in% c(10,11,12,1,2,3),
+         tide_height == 0.5) %>%
+  mutate(month_name = factor(month.name[month],
+                             levels = c("October","November","December",
+                                        "January","February","March")))
+
+# Step 2: Compute climatology (long-term mean for each month)
+climatology <- winter_df %>%
+  group_by(month_name, block) %>%
+  summarise(clim_mean = mean(temperature), .groups="drop")
+
+# Step 3: Compute avg_temp by group and join climatology
+winter_anoms <- winter_df %>%
+  group_by(year, block, month_name) %>%
+  summarise(avg_temp = mean(temperature), .groups="drop") %>%
+  left_join(climatology, by="month_name") %>%
+  mutate(anomaly = avg_temp - clim_mean)
+
+# Step 4: Plot anomalies
+ggplot(winter_anoms) +
+  geom_col(aes(year, anomaly, fill = block.y), position = position_dodge()) +
+  facet_wrap(~month_name) +
+  labs(y = "Temperature anomaly (°C)")
+```
+
+```{r}
+obs %>%
+  filter(Detect_SpeciesCode == "SEOT") %>%
+  pull(Comment) %>%
+  write.csv("C:/Users/bhiggins/OneDrive - DOI/Desktop/otters.csv")
+
+otters <- obs %>%
+  filter(Detect_SpeciesCode == "SEOT") %>%
+  mutate(
+    x_lower = str_to_lower(Comment),
+
+    # Define what counts as a "pup" indicator, including your new variants
+    has_pup = str_detect(
+      x_lower,
+      paste0(
+        "(",
+        "pup",           # 'pup' substring (covers 'pup' and 'pups')
+        "|\\bpups\\b",   # explicit plural
+        "|\\bp\\b",      # bare 'p' as a whole word (e.g., '1=p', '1 = p')
+        "|large\\s*p\\b",# 'large p' (with optional spaces)
+        "|large\\s*up\\b",# 'large up' (with optional spaces)
+        "|largep",       # 'largep' without space
+        "|largeup",      # 'largeup' without space
+        ")"
+      )
+    ),
+
+    any_num = str_detect(x_lower, "\\d+"),
+
+    pups = case_when(
+      has_pup & any_num ~ as.numeric(str_extract(x_lower, "\\d+")), # grab leading number
+      has_pup & !any_num ~ 1,                                        # 'pup' without number => 1
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-x_lower, -has_pup, -any_num) %>%
+  mutate(pups = replace_na(pups, 0),
+         adults = Count - pups)
+
+#check
+which((otters$pups + otters$adults) != otters$Count) #good to go!
+
+```
+```{r}
+otter_summary <- otters %>%
+  group_by(year, site) %>%
+  summarise(adults = sum(adults),
+            pups = sum(pups),
+            ratio = pups/adults) %>%
+  mutate(year = as.numeric(year))
+```
+```{r}
+otter_summary %>%
+  ggplot() +
+  geom_path(aes(year, ratio, color = site)) +
+  geom_point(aes(year, ratio, color = site)) +
+  labs(title = "SEOT pups/adult ratio")
+```
+
+```{r}
+bird_densities %>%
+  mutate(year = as.numeric(year)) %>%
+  filter(species == "SEOT") %>%
+  ggplot() +
+  geom_path(aes(year, density, color = site)) +
+  geom_point(aes(year, density, color = site)) +
+  labs(title = "SEOT adult counts")
+```
+```{r}
+temp_df <- temperature %>%
+  filter(exposure == "water") %>%
+  group_by(year, block) %>%
+  summarise(avg_temp = mean(temperature), .groups = "drop")
+
+left_join(otter_summary, temp_df, by = c("year", "site" = "block")) %>%
+  filter(site != "KBAY") %>%
+  ungroup() %>%
+  mutate(
+    ratio2 = as.numeric(scale(ratio)),
+    temp   = as.numeric(scale(avg_temp))) %>%
+  ggplot() +
+  geom_path(aes(year, ratio2, color = site)) +
+  geom_point(aes(year, ratio2, color = site)) +
+  geom_path(aes(year, temp)) +
+  facet_wrap(~site, ncol = 1) +
+  labs(title = "SEOT pups/adult ratio")
+  
+```
+```{r}
+all_taxa %>%
+  filter(site != "KBAY") %>%
+  select(year, site, mussel_count, BLOY, SEOT, pycnopodia_helianthoides) %>%
+  pivot_longer(cols = !c(year, site), names_to = "species", values_to = "Abundance") %>%
+  ggplot() +
+  geom_path(aes(year, Abundance, color = species)) +
+  geom_point(aes(year, Abundance, color = species)) +
+  geom_hline(aes( yintercept = 0)) +
+  facet_wrap(~site, nrow = 3)
+```
+
+```{r}
+birds_most_detected <- obs %>%
+  filter(!Detect_SpeciesCode %in% c("UNCO")) %>%
+  group_by(Detect_SpeciesCode) %>%
+  summarise(count = sum(Count),
+            detections = n()) %>%
+  arrange(desc(detections)) %>%
+  head(20) %>% #change this number for more or less species
+  pull(Detect_SpeciesCode)
+
+#find the birds we dont want
+trash <- obs %>%
+  filter(!Detect_SpeciesCode %in% birds_most_detected) %>%
+  pull(Detect_SpeciesCode) %>%
+  unique()
+
+#add GAK1 temp
+#https://research.cfos.uaf.edu/gak1/
+gak1 <- read_table(
+  "https://research.cfos.uaf.edu/gak1/data/GAK1_Compilation_1970-2025/GAK1_Compilation_1970-2025.dat"
+)
+
+gak1$`Date_Time,` <- ymd_hms(gak1$`Date_Time,`)
+gak1$year <- year(gak1$`Date_Time,`)
+
+gak_Summary <- gak1 %>%
+  mutate(temp = str_replace(`Temperature_[C],`, ",", "")) %>%
+  mutate(temp = as.numeric(temp),
+         depth = as.numeric(`Pressure_[dbar],`)) %>%
+  filter(depth < 10) %>%
+  group_by(year) %>%
+  summarise(temp = mean(as.numeric(temp), na.rm = T)) %>%
+  mutate(temp_scaled = as.numeric(scale(temp)))
+  
+
+
+library(ggcorrplot)
+cor_mat <- all_taxa %>% 
+   filter(site == "KEFJ") %>%
+  select(!site) %>%
+  select(-any_of(trash)) %>%
+  select(!LEAU) %>%
+  select(!UNJA) %>%
+  left_join(., gak_Summary, by = "year") %>%
+  slice(2:16) %>%
+  cor()
+
+ggcorrplot(cor_mat, type = "lower")
+
+
+hc <- hclust(dist(cor_mat))
+
+order_vec <- hc$order
+
+ggcorrplot(cor_mat[order_vec, order_vec], type = "lower") +
+  labs(title ="KEFJ")
+
+```
+```{r}
+cor_katm <- all_taxa %>% 
+   filter(site == "KATM") %>%
+  filter(year != 2007) %>%
+  select(!site) %>%
+  select(-any_of(trash)) %>%
+  select(!LEAU) %>%
+  select(!UNJA) %>%
+  select(!`mediaster_aequalis`) %>%
+  left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary[otter_summary$site == "KATM",], by = "year") %>%
+  select(!site) %>%
+  cor(use = "complete.obs")
+
+hc_katm<- hclust(dist(cor_katm))
+
+order_vec_katm <- hc_katm$order
+
+ggcorrplot(cor_katm[order_vec_katm, order_vec_katm], type = "lower") +
+  labs(title ="KATM")
+
+```
+
+```{r}
+all_taxa %>%
+  filter(site != "KBAY") %>%
+  select(year, site, RFCO, SEOT) %>%
+    left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary %>%
+              mutate( adults = as.numeric(scale(adults)),
+                      pups = as.numeric(scale(pups))), by = c("site", "year")) %>%
+  select(!temp) %>%
+  pivot_longer(cols = !c(year, site), names_to = "species", values_to = "Abundance") %>%
+  filter(species != "adults", species != "pups") %>%
+  ggplot() +
+  geom_path(aes(year, Abundance, color = species)) +
+  geom_point(aes(year, Abundance, color = species)) +
+  geom_hline(aes( yintercept = 0)) +
+  facet_wrap(~site, nrow = 3)
+
+```
+```{r}
+all_taxa %>%
+  filter(site != "KBAY") %>%
+  select(year, site, RFCO, SEOT) %>%
+    left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary, by = c("site", "year"))
+```
+
+```{r}
+install.packages('MuMIn')
+library(MuMIn)
+
+glm(SEOT ~ PECO + site + year, data = all_taxa) %>%
+```
+```{r}
+all_taxa %>%
+   filter(site != "KBAY") %>%
+   select(year, site, RFCO, SEOT) %>%
+     left_join(., gak_Summary, by = "year") %>%
+   left_join(., otter_summary %>%
+               mutate( adults = as.numeric(scale(adults)),
+                       pups = as.numeric(scale(pups))), by = c("site", "year")) %>%
+   select(!temp) %>%
+   pivot_longer(cols = !c(year, site), names_to = "species", values_to = "Abundance") %>%
+   filter(species != "adults", species != "pups") %>%
+   ggplot() +
+   geom_path(aes(year, Abundance, color = species)) +
+   geom_point(aes(year, Abundance, color = species)) +
+   geom_hline(aes( yintercept = 0)) +
+   facet_wrap(~site, nrow = 3)
+```
+
+```{r}
+p.mat.katm <- all_taxa %>% 
+   filter(site == "KATM") %>%
+  filter(year != 2007) %>%
+  select(!site) %>%
+  select(-any_of(trash)) %>%
+  select(!LEAU) %>%
+  select(!UNJA) %>%
+  select(!`mediaster_aequalis`) %>%
+  left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary[otter_summary$site == "KATM",], by = "year") %>%
+  select(!c(temp_scaled, site, adults, pups)) %>%
+  cor_pmat()
+
+cor_katm <- all_taxa %>% 
+   filter(site == "KATM") %>%
+  filter(year != 2007) %>%
+  select(!site) %>%
+  select(-any_of(trash)) %>%
+  select(!LEAU) %>%
+  select(!UNJA) %>%
+  select(!`mediaster_aequalis`) %>%
+  left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary[otter_summary$site == "KATM",], by = "year") %>%
+  select(!c(temp_scaled, site, adults, pups)) %>%
+  cor(use = "complete.obs")
+
+hc_katm<- hclust(dist(cor_katm))
+
+order_vec_katm <- hc_katm$order
+
+ggcorrplot(cor_katm, p.mat = p.mat.katm, hc.order = F, insig = "stars") +
+  labs(title ="KATM")
+  ggsave("C:/Users/bhiggins/OneDrive - DOI/Desktop/KATM_data_dredging.png", height = 10, width = 10)
+
+```
+
+```{r}
+p.mat.kefj <- all_taxa %>% 
+   filter(site == "KEFJ") %>%
+  filter(year != 2007) %>%
+  select(!site) %>%
+  select(-any_of(trash)) %>%
+  select(!LEAU) %>%
+  select(!UNJA) %>%
+  select(!`mediaster_aequalis`) %>%
+  left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary[otter_summary$site == "KEFJ",], by = "year") %>%
+  mutate(seot_pup_ratio = ratio) %>%
+  select(!c(temp_scaled, site, adults, pups, ratio)) %>%
+  cor_pmat()
+
+cor_mat <- all_taxa %>% 
+   filter(site == "KEFJ") %>%
+  filter(year != 2007) %>%
+  select(!site) %>%
+  select(-any_of(trash)) %>%
+  select(!LEAU) %>%
+  select(!UNJA) %>%
+  select(!`mediaster_aequalis`) %>%
+  left_join(., gak_Summary, by = "year") %>%
+  left_join(., otter_summary[otter_summary$site == "KEFJ",], by = "year") %>%
+    mutate(seot_pup_ratio = ratio) %>%
+  select(!c(temp_scaled, site, adults, pups, ratio)) %>%
+  cor(use = "complete.obs")
+
+#hc <- hclust(dist(cor_mat))
+
+#order_vec <- hc$order
+
+ggcorrplot(cor_mat, p.mat = p.mat.kefj,  insig = "stars", hc.order = F) +
+  labs(title ="KEFJ")
+ ggsave("C:/Users/bhiggins/OneDrive - DOI/Desktop/KEFJ_data_dredging.png", height = 10, width = 10)
+```
+keep making it more of a menace. add the snails!
+```{r}
+snails_upper <- snails %>%
+  mutate(site = substr(SiteID, 1, 3),
+         site = case_when(site == "AKP" ~ "KATM",
+                          site == "PWS" ~ "WPWS",
+                          site == "KEP" ~ "KEFJ")) %>%
+  group_by(Year, Elevation_Position, site, SpeciesName) %>%
+  summarise(count = mean(Count)) %>%
+  pivot_wider(names_from = SpeciesName, values_from = count) %>%
+  ungroup() %>%
+    filter(Elevation_Position == "Upper (1.5 m MLLW)") %>%
+  select(-Elevation_Position)
+
+all_taxa <- left_join(all_taxa, snails_upper, by = c("year" = "Year", "site"))
+```
+
+
+thinking out loud.
+all the heatwave analyses use the heatwave as a factor (pre, during, post), but looking at the temperatures, there sort of isnt a post, or at least its less straight forward. try using temp as a continious variable?
+
+
+```{r}
+gak_Summary %>%
+  filter(year > 2006) %>%
+  mutate(lta = mean(temp_scaled)) %>%
+  ggplot() +
+  geom_col(aes(year, temp_scaled))
 ```
 
