@@ -44,6 +44,7 @@ obs <- obs %>% filter(!TXNumber %in% pelagic_transects)
 ```
 
 link obs with transect effort
+
 ```{r}
 #sum species total for each survey (year and site)
 obs_summary <-obs %>%
@@ -87,7 +88,9 @@ bird_densities <- left_join(obs_summary, transects_summary, by = c("site", "year
   mutate(density = count/area) %>%
   relocate(species, .after = site)
 ```
+
 find the most common birds to look at
+
 ```{r}
 birds <- obs %>%
   filter(!Detect_SpeciesCode %in% c("UNCO")) %>%
@@ -108,6 +111,7 @@ bird_densities %>%
   facet_wrap(~species, scales = "free_y") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
 ```{r}
 bird_densities %>%
   filter(species %in% birds) %>%
@@ -117,6 +121,7 @@ bird_densities %>%
   facet_wrap(~site, scales = "free_y", nrow = 3) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
 ```{r}
 bird_densities %>%
   filter(species == "BLOY") %>%
@@ -126,6 +131,7 @@ bird_densities %>%
   facet_wrap(~species, scales = "free_y") + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
 ```{r}
 mussel_counts <- read.csv("data/KATMKEFJWPWS_2008-2025_Mytilus_20mm_Count.csv")
 mussel_size <- read.csv("data/KATMKEFJWPWS_2008-2025_Mytilus_20mm_Size.csv")
@@ -181,7 +187,9 @@ mussel_size %>%
   labs(title = "Mussel Size",
        y = "Size (mm)")
 ```
+
 noww check out the seastars
+
 ```{r}
 seastar_counts %>%
   mutate(site = substr(SiteID, 1, 3)) %>%
@@ -211,7 +219,9 @@ bird_densities %>%
   labs(title = "all birds combined",
        subtitle = "is this stupid?")
 ```
+
 combine everything into a single data frame for plotting
+
 ```{r}
 seastar_wide <- seastar_counts %>%
   mutate(site = substr(SiteID, 1, 3),
@@ -276,6 +286,7 @@ bloy_nest %>%
   geom_path(aes(Year, avg_density, color = BlockName)) +
   labs(title = "BLOY Density")
 ```
+
 ```{r}
 isotopes <- read.csv("data/Isotope_data_all_regions_2014-2025.csv", fileEncoding='latin1')
 isotopes <- isotopes %>% select(!c(X, X.1, X.2))
@@ -297,6 +308,7 @@ isotopes %>%
   geom_jitter(aes(d15N...., d13C...., colour = Species), alpha = 0.7) +
   facet_wrap(~Year)
 ```
+
 ```{r}
 isotopes %>%
   filter(Species == "trossulus") %>%
@@ -305,6 +317,7 @@ isotopes %>%
   geom_jitter(aes(d15N...., d13C...., colour = Year), alpha = 0.9, size = 3) +
     scale_x_continuous(limits = c(5, 10))
 ```
+
 ```{r}
 trossulus <-isotopes %>%
   filter(Species == "trossulus") %>%
@@ -334,6 +347,7 @@ trossulus %>%
   facet_wrap(~Year) +
   labs(title = "mussel isotopes")
 ```
+
 ```{r}
 isotopes %>%
   filter(Sample.ID == "POM") %>%
@@ -343,8 +357,8 @@ isotopes %>%
   labs(title = "POM")
 ```
 
-
 Limpet time!
+
 ```{r}
 limpet_count <- read.csv("data/KATMKEFJWPWS_2010-2025_Limpet_Count.csv")
 limpet_size <- read.csv("data/KATMKEFJWPWS_2006-2025_Limpet_Size.csv")
@@ -366,7 +380,8 @@ limpet_count %>%
   labs(title = "limpet density")
 ```
 
-The limpet abundances between KATM and KEFJ seem to trend oppositely 
+The limpet abundances between KATM and KEFJ seem to trend oppositely
+
 ```{r}
 limpet_size %>%
   mutate(site = substr(SiteID, 1, 3),
@@ -384,6 +399,7 @@ limpet_size %>%
 ```
 
 but the size fluctuations seem to trend similarly between sites
+
 ```{r}
 limpet_size %>%
   mutate(site = substr(SiteID, 1, 3),
@@ -403,6 +419,7 @@ limpet_size %>%
 ```
 
 snails:
+
 ```{r}
 snails <- read.csv("data/KATMKEFJWPWS_2006-2025_Nucella_Katharina_Lirabuccinum_Count.csv")
 ```
@@ -423,6 +440,7 @@ snails %>%
 ```
 
 check out the temperature data
+
 ```{r message=FALSE}
 temperature <- list.files("data/temperature",
                        pattern = "\\.csv$",
@@ -451,6 +469,7 @@ temperature %>%
   geom_boxplot(aes(year, temperature, group = year, color = block)) +
   facet_wrap(~block, ncol =1)
 ```
+
 ```{r}
 temperature %>%
   filter(exposure == "water",
@@ -463,6 +482,7 @@ temperature %>%
   geom_point(aes(year, avg_temp, color = block)) +
   labs(title = "May Temp")
 ```
+
 ```{r}
 temperature %>%
   filter(exposure == "water",
@@ -475,6 +495,7 @@ temperature %>%
   geom_point(aes(year, avg_temp, color = block)) +
   labs(title = "June Temp")
 ```
+
 ```{r}
 temperature %>%
   filter(exposure == "water",
@@ -519,6 +540,7 @@ temperature %>%
   geom_point(aes(year, avg_temp, color = block)) +
   facet_wrap(~month_name)
 ```
+
 ```{r}
 winter_df <- temperature %>%
   filter(exposure == "water",
@@ -590,6 +612,7 @@ otters <- obs %>%
 which((otters$pups + otters$adults) != otters$Count) #good to go!
 
 ```
+
 ```{r}
 otter_summary <- otters %>%
   group_by(year, site) %>%
@@ -598,6 +621,7 @@ otter_summary <- otters %>%
             ratio = pups/adults) %>%
   mutate(year = as.numeric(year))
 ```
+
 ```{r}
 otter_summary %>%
   ggplot() +
@@ -615,6 +639,7 @@ bird_densities %>%
   geom_point(aes(year, density, color = site)) +
   labs(title = "SEOT adult counts")
 ```
+
 ```{r}
 temp_df <- temperature %>%
   filter(exposure == "water") %>%
@@ -635,6 +660,7 @@ left_join(otter_summary, temp_df, by = c("year", "site" = "block")) %>%
   labs(title = "SEOT pups/adult ratio")
   
 ```
+
 ```{r}
 all_taxa %>%
   filter(site != "KBAY") %>%
@@ -705,6 +731,7 @@ ggcorrplot(cor_mat[order_vec, order_vec], type = "lower") +
   labs(title ="KEFJ")
 
 ```
+
 ```{r}
 cor_katm <- all_taxa %>% 
    filter(site == "KATM") %>%
@@ -746,6 +773,7 @@ all_taxa %>%
   facet_wrap(~site, nrow = 3)
 
 ```
+
 ```{r}
 all_taxa %>%
   filter(site != "KBAY") %>%
@@ -754,12 +782,6 @@ all_taxa %>%
   left_join(., otter_summary, by = c("site", "year"))
 ```
 
-```{r}
-install.packages('MuMIn')
-library(MuMIn)
-
-glm(SEOT ~ PECO + site + year, data = all_taxa) %>%
-```
 ```{r}
 all_taxa %>%
    filter(site != "KBAY") %>%
@@ -852,7 +874,9 @@ ggcorrplot(cor_mat, p.mat = p.mat.kefj,  insig = "stars", hc.order = F) +
   labs(title ="KEFJ")
  ggsave("C:/Users/bhiggins/OneDrive - DOI/Desktop/KEFJ_data_dredging.png", height = 10, width = 10)
 ```
+
 keep making it more of a menace. add the snails!
+
 ```{r}
 snails_upper <- snails %>%
   mutate(site = substr(SiteID, 1, 3),
@@ -869,10 +893,7 @@ snails_upper <- snails %>%
 all_taxa <- left_join(all_taxa, snails_upper, by = c("year" = "Year", "site"))
 ```
 
-
-thinking out loud.
-all the heatwave analyses use the heatwave as a factor (pre, during, post), but looking at the temperatures, there sort of isnt a post, or at least its less straight forward. try using temp as a continious variable?
-
+thinking out loud. all the heatwave analyses use the heatwave as a factor (pre, during, post), but looking at the temperatures, there sort of isnt a post, or at least its less straight forward. try using temp as a continious variable?
 
 ```{r}
 gak_Summary %>%
@@ -880,5 +901,571 @@ gak_Summary %>%
   mutate(lta = mean(temp_scaled)) %>%
   ggplot() +
   geom_col(aes(year, temp_scaled))
+```
+
+```{r}
+nppsd <- read.csv("C:/Users/bhiggins/OneDrive - DOI/MBM_Data_Proofing/SpeciesTaxonomyNPPSDv4.csv")
+
+obs %>%
+  filter(site == "KATM") %>%
+  filter(!Detect_SpeciesCode %in% c("UNCO")) %>%
+  group_by(Detect_SpeciesCode) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  left_join(., nppsd, by = c("Detect_SpeciesCode" = "species_code")) %>%
+  select(Detect_SpeciesCode, common_name, count) %>%
+  rename(number_of_detections= count) %>%
+  write.csv(., "C:/Users/bhiggins/OneDrive - DOI/Desktop/KATM_bird_species.csv")
+```
+
+thinking more: I think we should be able to bootstrap density estimates for each year, this would give us confidence intervals so we would know more about our ability to detect change
+
+first step is to make a data frame with the transects
+
+```{r}
+obs_boot <- obs %>%
+  group_by(year, site, TXNumber, Detect_SpeciesCode) %>%
+  summarise(count = sum(Count)) %>%
+  rename(species = Detect_SpeciesCode)
+
+#find all unique combinations of year, site, and transect, then repeat the bird list for each of them
+sampling_events_boot <- obs %>%
+  distinct(year, site, TXNumber)
+
+species_df <- species %>% 
+  data.frame() %>%
+  rename(species = ".")
+
+species_list <- list()
+
+for(i in 1:nrow(sampling_events_boot)) {
+  event <- sampling_events_boot[i,]
+  species_df$year <- event$year
+  species_df$site <- event$site
+  species_df$transect <- event$TXNumber
+  
+  species_list[[i]] <- species_df
+}
+
+#convert list to dataframe
+sampling_events_boot <- bind_rows(species_list)
+
+#this adds in zeros for the species not observed on each survey but doesnt make up surveys that didn't happen (as opposed to expand_grid)
+obs_boot <- left_join(sampling_events_boot, obs_boot, by = c("species", "year", "site", "transect" = "TXNumber")) %>%
+  mutate(count = replace_na(count, 0))
+
+#add the effort to the counts and calculate density
+bird_densities_by_transect <- left_join(obs_boot, transects, by = c("site", "year", "transect" = "TXNumber")) %>%
+  select(year, site, species, transect, Length_km, Area_Sampled_km2, count) %>%
+  mutate(count = as.numeric(count),
+         area = as.numeric(Area_Sampled_km2),
+         density = count/area,
+         year = as.numeric(year))
+```
+
+```{r}
+library(boot)
+set.seed(47)
+#create the mean function for bootstrapping
+mean_stat <- function(d, i) mean(d[i], na.rm = T)
+
+#identify each survey
+distinct_samples <- sampling_events_boot %>%
+ distinct(year, site) %>%
+ mutate(year = as.numeric(year))
+
+#create an object to store results in
+bootstrap_estimates <- list()
+
+#loop through each survey and bootstrap density estimates
+for(i in 1:37) {
+  year = as.numeric(distinct_samples$year[i])
+  site = distinct_samples$site[i]
+  
+  df = bird_densities_by_transect %>%
+          filter(site == .env$site,
+               year == .env$year,
+               species == "HADU")
+
+  boot_out <- boot(data = df$density, statistic = mean_stat, R = 2000)
+
+  ci <- boot.ci(boot_out, type = c("perc", "bca"))
+  
+  estimates <- data.frame(
+    year = year,
+    site = site,
+    est  = ci$t0,
+    lci  = ci$bca[4],
+    uci  = ci$bca[5]
+ )
+  
+  bootstrap_estimates[[i]] <- estimates
+}
+
+bootstrap_estimates <- bind_rows(bootstrap_estimates)
+```
+
+the graph below is funky becasue it includes estimates generated using both parks. just filtering to loop through for a single park breaks it becasue not all parks exist in all years. fix tomorow
+
+```{r}
+bootstrap_estimates %>%
+  ggplot() +
+  geom_ribbon(aes(x = year, ymin = lci, ymax = uci), fill = "blue", alpha = 0.2) +
+  geom_path(aes(x = year, y = est)) +
+  geom_point(aes(x = year, y = est)) +
+  facet_wrap(~ site, ncol = 1, scales = "free_y")
+```
+
+Ok so these aren't really any good for detecting trends. there isnt any good reason that the transects should have low variance because they aren't the same thing. you could do it by habitat category but that also might miss the point
+
+```{r}
+bootstrap_estimates <- list()
+
+#loop through each survey and bootstrap density estimates
+for(i in 1:37) {
+  year = as.numeric(distinct_samples$year[i])
+  site = distinct_samples$site[i]
+  
+  df = bird_densities_by_transect %>%
+          filter(site == .env$site,
+               year == .env$year,
+               species == "SEOT")
+
+  boot_out <- boot(data = df$density, statistic = mean_stat, R = 2000)
+
+  ci <- boot.ci(boot_out, type = c("perc", "bca"))
+  
+  estimates <- data.frame(
+    year = year,
+    site = site,
+    est  = ci$t0,
+    lci  = ci$bca[4],
+    uci  = ci$bca[5]
+ )
+  
+  bootstrap_estimates[[i]] <- estimates
+}
+
+bootstrap_estimates <- bind_rows(bootstrap_estimates)
+
+bootstrap_estimates %>%
+  ggplot() +
+  geom_ribbon(aes(x = year, ymin = lci, ymax = uci), fill = "blue", alpha = 0.2) +
+  geom_path(aes(x = year, y = est)) +
+  geom_point(aes(x = year, y = est)) +
+  facet_wrap(~ site, ncol = 1, scales = "free_y")
+```
+
+```{r}
+bootstrap_estimates <- list()
+
+common_species = obs %>%
+  filter(!Detect_SpeciesCode %in% c("UNCO", "BRMU")) %>%
+  group_by(Detect_SpeciesCode) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  head(10) %>% #change this number for more or less species
+  pull(Detect_SpeciesCode)
+
+
+
+for(j in 1:10) {
+  #pick the species
+  species = common_species[j]
+  
+#loop through each survey and bootstrap density estimates
+    for(i in 1:37) {
+      species_j <- list()
+      
+      year = as.numeric(distinct_samples$year[i])
+      site = distinct_samples$site[i]
+  
+      df = bird_densities_by_transect %>%
+          filter(site == .env$site,
+               year == .env$year,
+               species == .env$species)
+
+      boot_out <- boot(data = df$density, statistic = mean_stat, R = 2000)
+
+      ci <- boot.ci(boot_out, type = c("perc"))
+  
+      estimates <- data.frame(
+        year = year,
+        site = site,
+        species = species,
+        est  = ci$t0,
+        lci  = ci$percent[4],
+        uci  = ci$percent[5]
+    )
+  
+      species_j[[j]] <- estimates
+    }
+  bootstrap_estimates[[j]] <- bind_rows(species_j)
+}
+
+bootstrap_estimates <- bind_rows(bootstrap_estimates)
+```
+
+```{r}
+library(dplyr)
+library(purrr)
+library(boot)
+
+# Statistic for boot(): must accept (data, indices) and return a single number
+mean_stat <- function(data, indices) mean(data[indices], na.rm = TRUE)
+
+bootstrap_estimates <- vector("list", length = 10)
+
+common_species <- obs %>%
+  filter(!Detect_SpeciesCode %in% c("UNCO", "BRMU")) %>%
+  group_by(Detect_SpeciesCode) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  arrange(desc(count)) %>%
+  head(10) %>%
+  pull(Detect_SpeciesCode)
+
+# Drive inner loop by the actual size of distinct_samples
+n_groups <- nrow(distinct_samples)
+
+for (j in seq_along(common_species)) {
+  species <- common_species[j]
+
+  # Create the list ONCE per species
+  species_rows <- vector("list", length = n_groups)
+
+  for (i in seq_len(n_groups)) {
+    year <- distinct_samples$year[i]
+    site <- distinct_samples$site[i]
+
+    # Ensure types are aligned; use .env to refer to external variables
+    df <- bird_densities_by_transect %>%
+      filter(site == .env$site,
+             year == .env$year,
+             species == .env$species)
+
+    if (nrow(df) == 0 || all(is.na(df$density))) {
+      # Nothing to bootstrap for this (species, year, site)
+      species_rows[[i]] <- data.frame(
+        year    = year,
+        site    = site,
+        species = species,
+        est     = NA_real_,
+        lci     = NA_real_,
+        uci     = NA_real_
+      )
+      next
+    }
+
+    # Bootstrap
+    boot_out <- boot(data = df$density, statistic = mean_stat, R = 2000)
+
+    # Percentile CI; guard extraction
+    ci <- try(boot.ci(boot_out, type = "perc"), silent = TRUE)
+
+    lci <- if (is.list(ci) && !is.null(ci$percent)) ci$percent[4] else NA_real_
+    uci <- if (is.list(ci) && !is.null(ci$percent)) ci$percent[5] else NA_real_
+
+    species_rows[[i]] <- data.frame(
+      year    = year,
+      site    = site,
+      species = species,
+      est     = boot_out$t0,  # use boot's point estimate
+      lci     = lci,
+      uci     = uci
+    )
+  }
+
+  # Bind all (year, site) rows for this species
+  bootstrap_estimates[[j]] <- dplyr::bind_rows(species_rows)
+}
+
+# Final table: all species × (year, site)
+bootstrap_estimates <- dplyr::bind_rows(bootstrap_estimates)
+bootstrap_estimates
+```
+
+```{r}
+bootstrap_estimates %>%
+  filter(site != "KBAY") %>%
+  ggplot() +
+  geom_errorbar(aes(x = year, ymin = lci, ymax = uci), fill = "blue", alpha = 0.2) +
+  geom_path(aes(x = year, y = est)) +
+  geom_point(aes(x = year, y = est)) +
+  facet_grid(species~ site, scales = "free_y")
+```
+
+```{r}
+bootstrap_estimates %>%
+  filter(site != "KBAY") %>%
+ggplot( aes(year, est)) +
+  geom_smooth(aes(ymin = lci, ymax = uci, color = site, group = site, fill = site),
+              stat = "identity",
+              alpha = 0.2) +
+  geom_point() +
+  facet_wrap(~ species, scales = "free_y", ncol = 2) +
+  labs(title = "Bootstrapped average densities")
+
+```
+
+instead of using transects we could use habitat type, this should have less variance than transect and maybe make some better confidence intervals...?
+
+import shorezone
+
+```{r}
+library(sf)
+# List feature classes inside the .gdb
+st_layers("C:/PRO_PROJECTS/PRO_SHARING/ShoreZone_pro_2026_0530_26ad97/commondata/shorezone.gdb")
+
+# Read one layer
+HabitatClass <- st_read("C:/PRO_PROJECTS/PRO_SHARING/ShoreZone_pro_2026_0530_26ad97/commondata/shorezone.gdb", layer = "HabitatClass")
+CoastalClass <- st_read("C:/PRO_PROJECTS/PRO_SHARING/ShoreZone_pro_2026_0530_26ad97/commondata/shorezone.gdb", layer = "CoastalClass")
+BiologicalWaveExposure <- st_read("C:/PRO_PROJECTS/PRO_SHARING/ShoreZone_pro_2026_0530_26ad97/commondata/shorezone.gdb", layer = "BiologicalWaveExposure")
+ShoreType <- st_read("C:/PRO_PROJECTS/PRO_SHARING/ShoreZone_pro_2026_0530_26ad97/commondata/shorezone.gdb", layer = "ShoreType")
+
+```
+
+```{r}
+obs_sf <- obs %>%
+  st_as_sf(., coords = c("Long", "Lat"), crs = 4326)
+
+HabitatClass <- st_transform(HabitatClass, 4326)
+CoastalClass <- st_transform(CoastalClass, 4326)
+BiologicalWaveExposure <- st_transform(BiologicalWaveExposure, 4326)
+ShoreType <- st_transform(ShoreType, 4326)
+```
+
+```{r}
+library(leaflet)
+
+bbox <- st_bbox(obs_sf)
+
+bbox_poly <- st_as_sfc(bbox)
+
+HabitatClass <- st_filter(HabitatClass, bbox_poly)
+CoastalClass <- st_filter(CoastalClass, bbox_poly)
+BiologicalWaveExposure <- st_filter(BiologicalWaveExposure, bbox_poly)
+ShoreType <- st_filter(BiologicalWaveExposure, bbox_poly)
+
+#join habitat parameters with bird obs
+obs_sf <- st_join(obs_sf, HabitatClass, join = st_nearest_feature)
+obs_sf <- st_join(obs_sf, CoastalClass, join = st_nearest_feature)
+obs_sf <- st_join(obs_sf, BiologicalWaveExposure, join = st_nearest_feature)
+obs_sf <- st_join(obs_sf, ShoreType, join = st_nearest_feature)
+```
+
+now we need to see how many habitats we have
+
+```{r}
+obs_sf %>%
+  st_drop_geometry() %>%
+  group_by(HAB_CLASS_Name) %>%
+  summarise(counts = n()) %>%
+  arrange(desc(counts)) %>%
+  ggplot() +
+  geom_col(aes(HAB_CLASS_Name, counts)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+pal <- colorFactor(
+  palette = "viridis",
+  domain = HabitatClass$HAB_CLASS_Name)
+
+HabitatClass %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolylines(color = ~ pal(HAB_CLASS_Name))
+```
+
+```{r}
+library(vegan)
+
+bc.table <- bird_densities %>% 
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO")) %>%
+  select(-c(count, length, area)) %>%
+  pivot_wider(names_from = species, values_from = density) %>%
+  filter(!year %in% c(2006, 2011)) %>%
+  filter(site != "KBAY")
+
+#bray-curtis distance matrix
+bc.matrix <- as.matrix(bc.table[,3:ncol(bc.table)], labels = T) #why did I subset this?
+row.names(bc.matrix) <- paste(bc.table$site, bc.table$year, sep = "_")
+bc.matrix <- vegdist(bc.matrix, method = "bray")
+```
+
+```{r}
+by_survey_mds <- metaMDS(bc.matrix,
+          distance = "bray",
+          k = 3,
+          maxit = 999, 
+          trymax = 500,
+          wascores = TRUE)
+```
+
+```{r}
+data.scores = as.data.frame(scores(by_survey_mds))
+data.scores <- data.scores %>%
+  mutate(site = substr(row.names(.), start = 1, 4),
+         year = substr(rownames(.), 6, 10))
+
+data.scores <- data.scores %>%
+  mutate(
+    year = as.numeric(year),
+    blob = case_when(
+      year < 2014 ~ "pre",
+      year >= 2014 ~ "post"
+    ),
+    salmon = case_when(
+      year %% 2 == 0 ~ "even",
+      year %% 2 == 1 ~ "odd"
+    )
+  )
+```
+
+```{r}
+hulls <- data.scores %>%
+  group_by(salmon) %>%
+  slice(chull(NMDS1, NMDS2))
+
+okabe_ito <- c(
+  "#E69F00", "#56B4E9", "#009E73",
+  "#0072B2", "#D55E00", "#CC79A7"
+)
+
+ggplot(data.scores, aes(NMDS1, NMDS2)) +
+  geom_polygon(
+    data = hulls,
+    aes(fill = salmon, group = salmon),
+    color = NA, alpha = 0.35
+  ) +
+  geom_point(
+    aes(color = site, shape = site),
+    size = 3, stroke = 0.4
+  ) +
+  scale_fill_viridis_d(option = "C") +       # options: "A","B","C","D","E"
+  scale_color_manual(values = okabe_ito) +
+  theme_minimal(base_size = 12)
+
+```
+try a lunatic exercise in plotting nmds scores against temp. this is basically an attempt to look at the blob using continuous variables
+```{r}
+temp_df %>%
+  filter(block == "KEFJ" | block == "KATM") %>%
+  mutate(year = as.character(year)) %>%
+  left_join(data.scores, ., by = c("year", "site" = "block")) %>%
+  mutate(avg_temp = as.numeric(scale(avg_temp))) %>%
+  ggplot() +
+  geom_path(aes(year, NMDS1, color = site, group = site)) +
+  geom_path(aes(year, avg_temp, group = site))
+  
+
+temp_df %>%
+  filter(block == "KEFJ" | block == "KATM") %>%
+  mutate(year = as.numeric(year)) %>%
+  left_join(data.scores, ., by = c("year", "site" = "block")) %>%
+  mutate(avg_temp = as.numeric(scale(avg_temp))) %>%
+  ggplot() +
+  geom_point(aes(avg_temp, NMDS1))
+```
+now try grouping birds based on familky
+```{r}
+bc.table <- bird_densities %>% 
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO")) %>%
+  select(-c(count, length, area)) %>%
+  pivot_wider(names_from = species, values_from = density) %>%
+  filter(!year %in% c(2006, 2011)) %>%
+  filter(site != "KBAY")
+
+bird_densities$species[bird_densities$species == "NOCR"] <- "AMCR"
+bird_densities$species[bird_densities$species == "NOSH"] <- "NSHO"
+bird_densities$species[bird_densities$species == "HEGU"] <- "HERG"
+
+family.table <- bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  group_by(year, site, family) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  mutate(family = ifelse(family == "Laridae\xa0", "Laridae", family)) %>%
+  select(-c(count)) %>%
+  pivot_wider(names_from = family, values_from = density) %>%
+  filter(!year %in% c(2006, 2011)) %>%
+  filter(site != "KBAY") %>%
+  ungroup()
+```
+```{r}
+family.matrix <- as.matrix(family.table[,3:ncol(family.table)], labels = T) #why did I subset this?
+row.names(family.matrix) <- paste(family.table$site, family.table$year, sep = "_")
+family.matrix <- vegdist(family.matrix, method = "bray")
+```
+
+```{r}
+family_mds <- metaMDS(family.matrix,
+          distance = "bray",
+          k = 3,
+          maxit = 999, 
+          trymax = 500,
+          wascores = TRUE)
+```
+
+```{r}
+data.scores = as.data.frame(scores(family_mds))
+data.scores <- data.scores %>%
+  mutate(site = substr(row.names(.), start = 1, 4),
+         year = substr(rownames(.), 6, 10))
+
+data.scores <- data.scores %>%
+  mutate(
+    year = as.numeric(year),
+    blob = case_when(
+      year < 2014 ~ "pre",
+      year >= 2014 ~ "post"
+    ),
+    salmon = case_when(
+      year %% 2 == 0 ~ "even",
+      year %% 2 == 1 ~ "odd"
+    )
+  )
+```
+
+```{r}
+hulls <- data.scores %>%
+  group_by(blob, site) %>%
+  slice(chull(NMDS1, NMDS2))
+
+ggplot(data.scores, aes(NMDS1, NMDS2)) +
+  geom_polygon(
+    data = hulls,
+    aes(fill = blob, group = blob),
+    color = NA, alpha = 0.35
+  ) +
+  geom_point(
+    aes(color = blob),
+    size = 3, stroke = 0.4
+  ) +       # options: "A","B","C","D","E"
+  theme_minimal(base_size = 12) +
+  facet_wrap(~site, scales = "free")
+```
+
+```{r}
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  group_by(year, site, family) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  mutate(family = ifelse(family == "Laridae\xa0", "Laridae", family)) %>%
+  select(-c(count)) %>%
+  ggplot(aes(x = year, y = density, fill = family)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    y = "Percent of total density",
+    x = "Year",
+    fill = "Family"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1)
+
 ```
 
