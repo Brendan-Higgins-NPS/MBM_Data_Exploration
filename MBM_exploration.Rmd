@@ -6,6 +6,8 @@ output: html_notebook
 ```{r warning=FALSE}
 library(tidyverse)
 library(janitor)
+library(RColorBrewer)
+library(ggeffects)
 ```
 
 ```{r read in data}
@@ -109,17 +111,23 @@ bird_densities %>%
   geom_path(aes(year, density, colour = site, group = site)) +
   geom_point(aes(year, density, colour = site, group = site)) +
   facet_wrap(~species, scales = "free_y") + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Bird Density",
+       subtitle = "20 most abundant species")
 ```
 
 ```{r}
 bird_densities %>%
   filter(species %in% birds) %>%
+  group_by(species) %>%
   mutate(density = scale(density)) %>%
+  ungroup() %>%
   ggplot() +
   geom_path(aes(year, density, colour = species, group = species)) +
+  geom_point(aes(year, density, colour = species, group = species)) +
   facet_wrap(~site, scales = "free_y", nrow = 3) + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "scaled bird abundances")
 ```
 
 ```{r}
@@ -195,9 +203,13 @@ seastar_counts %>%
   mutate(site = substr(SiteID, 1, 3)) %>%
   group_by(Year, site, Species) %>%
   summarise(avg_density = mean(Density_individual200SqM)) %>%
+  group_by(Species) %>%
+  mutate(avg_density = as.numeric(scale(avg_density))) %>%
+  ungroup() %>%
   ggplot() +
   geom_path(aes(Year, avg_density, color = Species)) +
-  facet_wrap(~site, nrow = 3, scales = "free_y")
+  facet_wrap(~site, nrow = 3, scales = "free_y") +
+  labs(title = "Seastar density (scaled)")
 ```
 
 ```{r}
@@ -207,7 +219,8 @@ seastar_counts %>%
   summarise(avg_density = mean(Density_individual200SqM)) %>%
   ggplot() +
   geom_smooth(aes(Year, avg_density, group = site, color = site)) +
-  facet_wrap(~Species, nrow = 3, scales = "free_y")
+  facet_wrap(~Species, nrow = 3, scales = "free_y") +
+  labs(title = "Seastar Density")
 ```
 
 ```{r}
@@ -270,11 +283,6 @@ all_taxa %>%
   facet_wrap(~site, nrow = 3)
 ```
 
-```{r}
-all_taxa %>%
-  ggplot() +
-  geom_point(aes(mussel_count, pisaster_ochraceus))
-```
 
 ```{r}
 bloy_nest <- read.csv("data/KBAYKATMKEFJWPWS_2006-2025_blackOystercatcher_Transect_Summary.csv")
@@ -284,7 +292,7 @@ bloy_nest %>%
   summarise(avg_density = mean(as.numeric(NestDensity))) %>%
   ggplot() +
   geom_path(aes(Year, avg_density, color = BlockName)) +
-  labs(title = "BLOY Density")
+  labs(title = "BLOY Nest Density")
 ```
 
 ```{r}
@@ -323,28 +331,30 @@ trossulus <-isotopes %>%
   filter(Species == "trossulus") %>%
   filter(!is.na(d15N....),
          !is.na(d13C....)) %>%
-mutate(Year = as.factor(Year))
-
+#mutate(Year = as.factor(Year)) %>%
+ rename_with(janitor::make_clean_names)
+ 
 hulls <- trossulus %>%
-  group_by(Year) %>%
-  slice(chull(d15N...., d13C....))
+  group_by(year) %>%
+  slice(chull(d15n, d13c)) %>%
+  ungroup()
 
 
 ggplot(trossulus) +
-  geom_jitter(aes(x = d15N...., y = d13C...., colour = Year),
-              alpha = 0.9, size = 3) +
+  geom_point(aes(x = d15n, y = d13c),
+              alpha = 0.1, size = 3) +
   geom_polygon(data = hulls,
-               aes(x = d15N...., y = d13C...., group = Year),
+               aes(x = d15n, y = d13c, group = year),
                alpha = 0.2, colour = "black") +
-  scale_x_continuous(limits = c(5, 10)) +
-  facet_wrap(~Year)
+  #scale_x_continuous(limits = c(5, 10)) +
+  facet_wrap(~year)
 ```
 
 ```{r}
 trossulus %>%
   ggplot() +
-  geom_jitter(aes(d15N...., d13C...., colour = Region), alpha = 0.5, size = 3) +
-  facet_wrap(~Year) +
+  geom_jitter(aes(d15n, d13c, colour = region), alpha = 0.5, size = 3) +
+  facet_wrap(~year) +
   labs(title = "mussel isotopes")
 ```
 
@@ -655,7 +665,7 @@ left_join(otter_summary, temp_df, by = c("year", "site" = "block")) %>%
   ggplot() +
   geom_path(aes(year, ratio2, color = site)) +
   geom_point(aes(year, ratio2, color = site)) +
-  geom_path(aes(year, temp)) +
+  geom_path(aes(year, temp, color = "temp")) +
   facet_wrap(~site, ncol = 1) +
   labs(title = "SEOT pups/adult ratio")
   
@@ -1267,17 +1277,6 @@ obs_sf %>%
 ```
 
 ```{r}
-pal <- colorFactor(
-  palette = "viridis",
-  domain = HabitatClass$HAB_CLASS_Name)
-
-HabitatClass %>%
-  leaflet() %>%
-  addTiles() %>%
-  addPolylines(color = ~ pal(HAB_CLASS_Name))
-```
-
-```{r}
 library(vegan)
 
 bc.table <- bird_densities %>% 
@@ -1351,14 +1350,13 @@ try a lunatic exercise in plotting nmds scores against temp. this is basically a
 ```{r}
 temp_df %>%
   filter(block == "KEFJ" | block == "KATM") %>%
-  mutate(year = as.character(year)) %>%
   left_join(data.scores, ., by = c("year", "site" = "block")) %>%
   mutate(avg_temp = as.numeric(scale(avg_temp))) %>%
   ggplot() +
   geom_path(aes(year, NMDS1, color = site, group = site)) +
   geom_path(aes(year, avg_temp, group = site))
-  
-
+```  
+```{r}
 temp_df %>%
   filter(block == "KEFJ" | block == "KATM") %>%
   mutate(year = as.numeric(year)) %>%
@@ -1367,7 +1365,7 @@ temp_df %>%
   ggplot() +
   geom_point(aes(avg_temp, NMDS1))
 ```
-now try grouping birds based on familky
+now try grouping birds based on family
 ```{r}
 bc.table <- bird_densities %>% 
   filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO")) %>%
@@ -1448,13 +1446,39 @@ ggplot(data.scores, aes(NMDS1, NMDS2)) +
 ```
 
 ```{r}
+#order families taxonomically
+families <- bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  group_by(year, site, family) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  pull(family) %>%
+  unique()
+
+family_order <- data.frame(families) %>%
+  mutate(keep = 1)
+family_order <- left_join(nppsd, family_order, by = c("family" = "families")) %>%
+  mutate(family = ifelse(family == "Laridae\xa0", "Laridae", family)) %>%
+  filter(keep == 1) %>%
+  pull(family) %>%
+  unique() %>%
+  as.vector()
+
+
+#palette <- colorRampPalette(brewer.pal(9, "Spectral"))(17)
+#palette <- sample(palette)   # randomize order
+
+palette <- c("#F2FAAB", "#FDC775", "#88CFA4", "#FEEFA4", "#E6F598", "#ABDDA4", "#4CA4B1", "#C8E99E", "#FFFFBF", "#FEE08B", "#D53E4F", "#F88D51", "#66C2A5", "#F46D43", "#3288BD", "#E45549", "#FDAE61")
+
 bird_densities %>%
   filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
   left_join(., nppsd, by = c("species" = "species_code")) %>%
   group_by(year, site, family) %>%
   summarise(count = sum(count),
             density = sum(log(density + 1))) %>%
-  mutate(family = ifelse(family == "Laridae\xa0", "Laridae", family)) %>%
+  mutate(family = ifelse(family == "Laridae\xa0", "Laridae", family),
+         family = factor(family, levels = family_order)) %>%
   select(-c(count)) %>%
   ggplot(aes(x = year, y = density, fill = family)) +
   geom_bar(stat = "identity", position = "fill") +
@@ -1465,7 +1489,434 @@ bird_densities %>%
     fill = "Family"
   ) +
   theme_minimal() +
-  facet_wrap(~site, ncol = 1)
+  facet_wrap(~site, ncol = 1) +
+  scale_fill_manual(values = palette)
 
 ```
+```{r}
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  group_by(year, site, species) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  select(-c(count)) %>%
+  ggplot(aes(x = year, y = density, fill = species)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    y = "Percent of total density",
+    x = "Year",
+    fill = "Family"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1)
+```
+ok the plan for today is to do this by diet and by functional group
+```{r}
+#bird_densities %>%
+#  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", #"MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+#  pull(species) %>%
+#  unique() %>%
+#  data.frame() %>%
+#  rename(species_code = ".") %>%
+#  left_join(., nppsd, by = c("species_code" = "species_code")) %>%
+#  write.csv(., row.names = FALSE, "data/functional_groups_template.csv")
+  
+functional_groups <- read.csv("data/functional_groups.csv")
+diet_palette <- sample(colorRampPalette(brewer.pal(9, "Spectral"))(5))
+diet_palette <- c("#FFFFBF", "#3288BD",  "#D53E4F", "#ABDDA4",  "#FDAE61")
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  left_join(., functional_groups, by = c("species" = "species_code")) %>%
+  group_by(year, site, diet) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  select(-c(count)) %>%
+  ggplot(aes(x = year, y = density, fill = diet)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    y = "Percent of total density",
+    x = "Year",
+    fill = "Diet"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1) +
+  scale_fill_manual(values = diet_palette)
+```
 
+```{r}
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  left_join(., functional_groups, by = c("species" = "species_code")) %>%
+  group_by(year, site, functional_group) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  select(-c(count)) %>%
+  ggplot(aes(x = year, y = density, fill = functional_group)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    y = "Percent of total density",
+    x = "Year",
+    fill = "Functional Group"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1) +
+  scale_fill_manual(values = colorRampPalette(brewer.pal(9, "Spectral"))(3))
+```
+make ecological groups by comining diet and foraging strategy
+```{r}
+#niche_palette <- sample(colorRampPalette(brewer.pal(9, "Spectral"))(11))
+
+niche_palette <- c("#3288BD", "#C2E69F", "#EBF79F", "#5BB6A9", "#FFFFBF", "#FDC271", "#8FD2A4", "#FEE695", "#F99455", "#D53E4F", "#ED6345")
+
+
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  left_join(., functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  group_by(year, site, niche) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  select(-c(count)) %>%
+  ggplot(aes(x = year, y = density, fill = niche)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    y = "Percent of total density",
+    x = "Year",
+    fill = "Niche"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1) +
+  scale_fill_manual(values = niche_palette)
+```
+
+```{r}
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  left_join(., functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  group_by(year, site, niche) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1))) %>%
+  mutate(density_scaled = as.numeric(scale(density))) %>%
+  ggplot(aes(year, density_scaled, color = niche, group = niche)) +
+  geom_path() +
+  geom_point() +
+  facet_wrap(~site, ncol = 1) +
+  theme_minimal()
+```
+
+ok the question is how redundant these groups are. figure out how to plot that
+```{r}
+library(ggridges)
+
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  left_join(., functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0) %>%
+  group_by(year, site, niche) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1)),
+            n_species = n_distinct(species)) %>%
+  ungroup() %>%
+  ggplot() +
+  geom_col(aes(year, n_species, fill = niche), position = "dodge") +
+  labs(
+    y = "Number of Species per Niche",
+    x = "Year",
+    fill = "Niche"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1) +
+  labs(title = "Ecosystem redundancy")
+```
+```{r}
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(., nppsd, by = c("species" = "species_code")) %>%
+  left_join(., functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0) %>%
+  group_by(year, site, diet) %>%
+  summarise(count = sum(count),
+            density = sum(log(density + 1)),
+            n_species = n_distinct(species)) %>%
+  ungroup() %>%
+  ggplot() +
+  geom_col(aes(year, n_species, fill = diet), position = "dodge") +
+  labs(
+    y = "Number of Species per Niche",
+    x = "Year",
+    fill = "Niche"
+  ) +
+  theme_minimal() +
+  facet_wrap(~site, ncol = 1) +
+  labs(title = "Ecosystem redundancy")
+```
+
+```{r}
+bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
+                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
+                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
+                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(nppsd, by = c("species" = "species_code")) %>%
+  left_join(functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0) %>%
+  filter(!niche %in% c("land duck food", "land fish", "surface inverts")) %>%
+  group_by(year, site, niche) %>%
+  summarise(
+    count = sum(count),
+    density = sum(log(density + 1)),
+    n_species = n_distinct(species),
+    .groups = "drop"
+  ) %>%
+  group_by(site, niche) %>%          # compute anomaly baseline per niche
+  mutate(mean_species = mean(n_species),
+         anomaly = n_species - mean_species) %>%
+  ungroup() %>%
+  ggplot(aes(x = year, y = anomaly, fill = site, group = site)) +
+  geom_col(position = "dodge") +
+  labs(
+    y = "Species Anomaly (Deviation From Mean)",
+    x = "Year",
+    fill = "Niche"
+  ) +
+  theme_minimal() +
+  facet_wrap(~niche, ncol = 1) +
+  geom_hline(yintercept = 0)
+```
+this should probably be modeled...
+```{r}
+niche_df <- bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
+                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
+                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
+                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(nppsd, by = c("species" = "species_code")) %>%
+  left_join(functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0) %>%
+  filter(!niche %in% c("land duck food", "land fish", "surface inverts")) %>%
+  group_by(year, site, niche) %>%
+  summarise(
+    count = sum(count),
+    density = sum(log(density + 1)),
+    n_species = n_distinct(species),
+    .groups = "drop"
+  ) %>%
+  group_by(site, niche) %>%          # compute anomaly baseline per niche
+  mutate(mean_species = mean(n_species),
+         anomaly = n_species - mean_species) %>%
+  ungroup() %>%
+  mutate(year = as.numeric(year)) %>%
+  left_join(., gak_Summary)
+
+niche_df$blob[niche_df$year < 2014] <- "pre"
+niche_df$blob[niche_df$year >= 2014] <- "post"
+
+glm(density ~ temp*year + niche + site + year + blob, data = niche_df) %>% summary()
+fit <- glm(density ~ temp*year + niche + site + year + blob, data = niche_df)
+
+effect_data <- ggpredict(fit, terms = c("niche", "site", "year"))
+
+plot(effect_data)
+```
+```{r}
+library(bcp)
+gak_Summary %>%
+  ggplot(aes(year, temp)) +
+  geom_path() +
+  geom_point()
+
+set.seed(101)
+bcp_gak1 = bcp(gak_Summary$temp, p0 = 0.008, burnin = 1000, 
+             mcmc = 10000)
+
+plot(bcp_gak1, main = "GAK1 Temp changepoints")
+```
+```{r}
+diver_bcp <- niche_df %>%
+  filter(niche == "diving fish")
+bcp_gak1 = bcp(diver_bcp$anomaly, p0 = 0.008, burnin = 1000, 
+             mcmc = 10000)
+
+plot(bcp_gak1, main = "GAK1 Temp changepoints")
+```
+
+```{r}
+library(DirichletReg)
+
+niche_df <- bird_densities %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
+                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
+                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
+                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(nppsd, by = c("species" = "species_code")) %>%
+  left_join(functional_groups, by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0) %>%
+  filter(!niche %in% c("land duck food", "land fish", "surface inverts")) %>%
+  group_by(year, site, niche) %>%
+  summarise(prop = density / sum(density))
+
+prop_df <- bird_densities %>%
+filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
+                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
+                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
+                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(nppsd,              by = c("species" = "species_code")) %>%
+  left_join(functional_groups,  by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0,
+         !niche %in% c("land duck food", "land fish", "surface inverts")) %>%
+  # 1) Aggregate to niche within site-year
+  group_by(year, site, niche) %>%
+  summarise(density_niche = sum(log(density + 1)), .groups = "drop") %>%
+  # 2) Compute proportions across niches within each site-year
+  group_by(year, site) %>%
+  mutate(prop = density_niche / sum(density_niche)) %>%
+  ungroup()
+
+
+prop_wide <- prop_df %>% 
+  select(-density_niche) %>%
+  pivot_wider(names_from = niche, values_from = prop) %>%
+  mutate(across(3:10, ~ replace_na(., 0))) %>%
+  select(-`diving plankton`) %>%
+  mutate(year = as.numeric(year)) %>%
+  left_join(gak_Summary, by = "year")
+```
+
+```{r}
+prop_df %>%
+  filter(site != "KBAY") %>%
+  ggplot(aes(year, prop, color = niche, group = niche)) +
+  geom_path() +
+  facet_wrap(~site, ncol = 1) +
+  labs(title = "Proportion of total abundance by niche")
+```
+
+```{r}
+library(streamgraph)
+
+prop_df %>%
+  filter(site == "KEFJ") %>%
+  streamgraph(key = "niche", value = "density_niche", date = "year", offset = "silhouette") %>%
+  sg_axis_x(1, "year", "%Y") %>%
+  sg_legend(show=TRUE, label="Niches: ")
+```
+
+```{r}
+prop_wide %>%
+  ggplot(aes(`diving fish`, `diving inverts`)) +
+  geom_point(aes(color = site)) +
+  geom_smooth(method = "lm") +
+  labs(title = "Diving invert ~ diving fish") +
+  facet_wrap(~site, ncol = 1, scales = "free")
+```
+
+```{r}
+install.packages("plotly")
+library(plotly)
+
+
+# --- 1) Put your data frame name here ----------------------------------------
+# Assuming your data is in 'prop_wide' with columns shown in your preview:
+# year, site, `diving fish`, `diving inverts`, ..., temp, temp_scaled
+df <- prop_wide %>%
+  rename_with(janitor::make_clean_names)  # spaces -> underscores
+
+make_surface_for_site <- function(data, site_name,
+                                  x_col = "diving_inverts",
+                                  y_col = "diving_fish",
+                                  z_col = "temp_scaled",
+                                  nx = 60, ny = 60,
+                                  extrap = TRUE) {
+
+  df_s <- data %>%
+    filter(site == site_name) %>%
+    select(all_of(c(x_col, y_col, z_col))) %>%
+    drop_na()
+
+  if(nrow(df_s) < 5) stop("Not enough points for site: ", site_name)
+
+  # Interpolate irregular data onto a grid
+  interp_res <- akima::interp(
+    x = df_s[[x_col]],
+    y = df_s[[y_col]],
+    z = df_s[[z_col]],
+    duplicate = "mean",
+    nx = nx, ny = ny,
+    extrap = extrap
+  )
+
+  # Plot surface
+  plot_ly(
+    x = interp_res$x,
+    y = interp_res$y,
+    z = interp_res$z,
+    type = "surface",
+    colorscale = "Viridis"
+  ) %>%
+    add_markers(
+      data = df_s,
+      x = df_s[[x_col]],
+      y = df_s[[y_col]],
+      z = df_s[[z_col]],
+      marker = list(size = 3, color = "red"),
+      inherit = FALSE
+    ) %>%
+    layout(
+      title = paste("Surface for site:", site_name),
+      scene = list(
+        xaxis = list(title = x_col),
+        yaxis = list(title = y_col),
+        zaxis = list(title = z_col)
+      )
+    )
+}
+
+
+# --- 2) Make surfaces for each site ------------------------------------------
+p_katm <- make_surface_for_site(df, "KATM")
+p_kefj <- make_surface_for_site(df, "KEFJ")
+
+# View each surface
+p_katm
+p_kefj
+
+# Or show them side-by-side
+subplot(p_katm, p_kefj, nrows = 1, margin = 0.05, titleX = TRUE, titleY = TRUE)
+
+```
+```{r}
+#try some models
+prop_wide <- janitor::clean_names(prop_wide)
+fit.null <- glm(diving_fish ~ 1, data = prop_wide, family = tweedie())
+fit.1 <- glm(diving_fish ~ year, data = prop_wide, family = tweedie())
+fit.2 <- glm(diving_fish ~ year + site, data = prop_wide, family = tweedie())
+fit.3 <- glm(diving_fish ~ year + site + diving_inverts, data = prop_wide, family = tweedie())
+fit.4 <- glm(diving_fish ~ year + site + temp, data = prop_wide, family = tweedie())
+fit.5 <- glm(diving_fish ~ temp, data = prop_wide, family = tweedie())
+fit.6 <- glm(diving_fish ~ diving_inverts, data = prop_wide, family = tweedie())
+
+AIC(fit.null, fit.1, fit.2, fit.3, fit.4, fit.5, fit.6) %>% arrange(desc(AIC))
+```
+
+```{r}
+summary(fit.5)
+```
+see if there is a way to make these into good models. 
+why is the above graph such a good relationship but the fish eaters vs benthivores relationship wasnt obvious from the streamplot
