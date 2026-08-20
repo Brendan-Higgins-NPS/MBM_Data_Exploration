@@ -8,6 +8,7 @@ library(tidyverse)
 library(janitor)
 library(RColorBrewer)
 library(ggeffects)
+library(glmmTMB)
 ```
 
 ```{r read in data}
@@ -1815,7 +1816,9 @@ prop_df %>%
   filter(site == "KEFJ") %>%
   streamgraph(key = "niche", value = "density_niche", date = "year", offset = "silhouette") %>%
   sg_axis_x(1, "year", "%Y") %>%
-  sg_legend(show=TRUE, label="Niches: ")
+  sg_legend(show=TRUE, label="Niches: ") %>%
+  sg_title(title = "KEFJ")
+
 ```
 
 ```{r}
@@ -1827,92 +1830,20 @@ prop_wide %>%
   facet_wrap(~site, ncol = 1, scales = "free")
 ```
 
+
 ```{r}
-install.packages("plotly")
-library(plotly)
-
-
-# --- 1) Put your data frame name here ----------------------------------------
-# Assuming your data is in 'prop_wide' with columns shown in your preview:
-# year, site, `diving fish`, `diving inverts`, ..., temp, temp_scaled
-df <- prop_wide %>%
-  rename_with(janitor::make_clean_names)  # spaces -> underscores
-
-make_surface_for_site <- function(data, site_name,
-                                  x_col = "diving_inverts",
-                                  y_col = "diving_fish",
-                                  z_col = "temp_scaled",
-                                  nx = 60, ny = 60,
-                                  extrap = TRUE) {
-
-  df_s <- data %>%
-    filter(site == site_name) %>%
-    select(all_of(c(x_col, y_col, z_col))) %>%
-    drop_na()
-
-  if(nrow(df_s) < 5) stop("Not enough points for site: ", site_name)
-
-  # Interpolate irregular data onto a grid
-  interp_res <- akima::interp(
-    x = df_s[[x_col]],
-    y = df_s[[y_col]],
-    z = df_s[[z_col]],
-    duplicate = "mean",
-    nx = nx, ny = ny,
-    extrap = extrap
-  )
-
-  # Plot surface
-  plot_ly(
-    x = interp_res$x,
-    y = interp_res$y,
-    z = interp_res$z,
-    type = "surface",
-    colorscale = "Viridis"
-  ) %>%
-    add_markers(
-      data = df_s,
-      x = df_s[[x_col]],
-      y = df_s[[y_col]],
-      z = df_s[[z_col]],
-      marker = list(size = 3, color = "red"),
-      inherit = FALSE
-    ) %>%
-    layout(
-      title = paste("Surface for site:", site_name),
-      scene = list(
-        xaxis = list(title = x_col),
-        yaxis = list(title = y_col),
-        zaxis = list(title = z_col)
-      )
-    )
-}
-
-
-# --- 2) Make surfaces for each site ------------------------------------------
-p_katm <- make_surface_for_site(df, "KATM")
-p_kefj <- make_surface_for_site(df, "KEFJ")
-
-# View each surface
-p_katm
-p_kefj
-
-# Or show them side-by-side
-subplot(p_katm, p_kefj, nrows = 1, margin = 0.05, titleX = TRUE, titleY = TRUE)
-
-```
-```{r}
+library(statmod)
 #try some models
 prop_wide <- janitor::clean_names(prop_wide)
-fit.null <- glm(diving_fish ~ 1, data = prop_wide, family = tweedie())
-fit.1 <- glm(diving_fish ~ year, data = prop_wide, family = tweedie())
-fit.2 <- glm(diving_fish ~ year + site, data = prop_wide, family = tweedie())
-fit.3 <- glm(diving_fish ~ year + site + diving_inverts, data = prop_wide, family = tweedie())
-fit.4 <- glm(diving_fish ~ year + site + temp, data = prop_wide, family = tweedie())
-fit.5 <- glm(diving_fish ~ temp, data = prop_wide, family = tweedie())
-fit.6 <- glm(diving_fish ~ diving_inverts, data = prop_wide, family = tweedie())
+fit.null <- glm(diving_fish ~ 1, data = prop_wide, family = Gamma(link = "log"))
+fit.1 <- glm(diving_fish ~ year, data = prop_wide, family = Gamma(link = "log"))
+fit.2 <- glm(diving_fish ~ year + site, data = prop_wide, family = Gamma(link = "log"))
+fit.3 <- glm(diving_fish ~ year + site + diving_inverts, data = prop_wide, family = Gamma(link = "log"))
+fit.4 <- glm(diving_fish ~ year + site + temp, data = prop_wide, family = Gamma(link = "log"))
+fit.5 <- glm(diving_fish ~ temp, data = prop_wide, family = Gamma(link = "log"))
+fit.6 <- glm(diving_fish ~ diving_inverts, data = prop_wide, family = Gamma(link = "log"))
 
-AIC(fit.null, fit.1, fit.2, fit.3, fit.4, fit.5, fit.6) %>% arrange(desc(AIC))
+AIC(fit.null, fit.1, fit.2, fit.3, fit.4, fit.5, fit.6) %>% arrange(AIC)
 ```
 
 ```{r}
@@ -1920,3 +1851,538 @@ summary(fit.5)
 ```
 see if there is a way to make these into good models. 
 why is the above graph such a good relationship but the fish eaters vs benthivores relationship wasnt obvious from the streamplot
+```{r}
+library(ggeffects)
+
+predict.5 <- predict_response(fit.5, terms = "temp")
+
+ggplot(predict.5, aes(x, predicted)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1)
+```
+```{r}
+ggcorrplot(corr = cor(prop_wide[,-2]), lab = T)
+```
+lord help us, we're adding atmospheric indices to the model....
+```{r read in climate indices}
+#climate indices from: https://psl.noaa.gov/enso/dashboard.html
+enso <- read_table("data/meiv2.data", col_names = FALSE, 
+     skip = 1) %>%
+  slice(1:(n() - 5))
+
+colnames(enso) <- c("year", "DJ", "JF", "FM", "MA", "AM",	"MJ", "JJ", "JA",	"AS",	"SO",	"ON",	"ND")
+
+enso <- enso %>%
+  pivot_longer(cols = -1) %>%
+  mutate(year = as.numeric(year),
+         value = as.numeric(value)) %>%
+  group_by(year) %>%
+  summarise(mean_enso = mean(value))
+
+pdo <- read.csv("data/pdo.timeseries.sstens.csv") %>%
+  rename(date = Date,
+         value = 2) %>%
+  mutate(date = mdy(date)) %>%
+  na.omit() %>%
+  slice(1:(n()-6))
+```
+
+```{r}
+
+enso %>%
+  mutate(sign = if_else(mean_enso >= 0, "Positive", "Negative")) %>%
+  ggplot(aes(x = year, y = mean_enso)) +
+  geom_col(aes(fill = sign), width = 0.9) +
+  scale_fill_manual(
+    values = c(Positive = "#d62728", Negative = "#3182bd"),
+    guide = "none"
+  ) +
+  geom_hline(yintercept = 0, color = "grey40") +
+  labs(x = "Year", y = "Mean ENSO", title = "ENSO: Positive (red) vs Negative (blue)") +
+  theme_minimal()
+
+```
+```{r}
+pdo %>%
+  filter(year(date) > 2006) %>%
+  ggplot() +
+  geom_col(aes(date, value))
+```
+now annualize the pdo and add to the modeling df
+```{r}
+pdo_annualized <- pdo %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarise(pdo = mean(value))
+
+prop_wide <- left_join(prop_wide, pdo_annualized, by = "year") %>%
+  left_join(., enso, by = "year")
+```
+
+```{r}
+prop_wide <- prop_wide %>%
+  filter(site != "KBAY")
+
+fit.null <- glm(diving_fish ~ 1, data = prop_wide, family = Gamma(link = "log"))
+fit.1 <- glm(diving_fish ~ year, data = prop_wide, family = Gamma(link = "log"))
+fit.2 <- glm(diving_fish ~ year + site, data = prop_wide, family = Gamma(link = "log"))
+fit.3 <- glm(diving_fish ~ year + site + diving_inverts, data = prop_wide, family = Gamma(link = "log"))
+fit.4 <- glm(diving_fish ~ year + site + temp, data = prop_wide, family = Gamma(link = "log"))
+fit.5 <- glm(diving_fish ~ temp, data = prop_wide, family = Gamma(link = "log"))
+fit.6 <- glm(diving_fish ~ diving_inverts, data = prop_wide, family = Gamma(link = "log"))
+
+fit.7 <- glm(diving_fish ~ pdo, data = prop_wide, family = Gamma(link = "log"))
+fit.8 <- glm(diving_fish ~ mean_enso, data = prop_wide, family = Gamma(link = "log"))
+fit.9 <- glm(diving_fish ~ diving_inverts + mean_enso, data = prop_wide, family = Gamma(link = "log"))
+fit.10 <- glm(diving_fish ~ diving_inverts + temp + mean_enso + pdo, data = prop_wide, family = Gamma(link = "log"))
+
+fit.11 <- glm(diving_fish ~ diving_inverts + mean_enso + pdo + site + year, data = prop_wide, family = Gamma(link = "log"))
+fit.12 <- glm(diving_fish ~ diving_inverts + pdo + site + year, data = prop_wide, family = Gamma(link = "log"))
+fit.13 <- glm(diving_fish ~ diving_inverts + mean_enso + site + year, data = prop_wide, family = Gamma(link = "log"))
+
+fit.14 <- glm(diving_fish ~ mean_enso + site + year, data = prop_wide, family = Gamma(link = "log"))
+fit.15 <- glm(diving_fish ~ pdo + site + year, data = prop_wide, family = Gamma(link = "log"))
+
+AIC(fit.null, fit.1, fit.2, fit.3, fit.4, fit.5, fit.6, fit.7, fit.8, fit.9, fit.10, fit.11, fit.12, fit.13, fit.14, fit.15) %>% arrange(AIC)
+
+```
+
+
+```{r}
+library(dplyr)
+
+# Ensure response is strictly positive for Gamma(log)
+prop_wide2 <- prop_wide %>%
+  mutate(
+    diving_inverts_resp = pmax(diving_inverts, 1e-6),   # response
+    year = as.numeric(year)                              # good practice
+  )
+
+# Fit the "same-structure" models with swapped response/predictors
+fitI.null <- glm(diving_inverts_resp ~ 1, data = prop_wide2, family = Gamma(link = "log"))
+fitI.1    <- glm(diving_inverts_resp ~ year, data = prop_wide2, family = Gamma(link = "log"))
+fitI.2    <- glm(diving_inverts_resp ~ year + site, data = prop_wide2, family = Gamma(link = "log"))
+
+# NOTE: where the original had + diving_inverts (predictor), we now use + diving_fish
+fitI.3    <- glm(diving_inverts_resp ~ year + site + diving_fish, data = prop_wide2, family = Gamma(link = "log"))
+
+fitI.4    <- glm(diving_inverts_resp ~ year + site + temp, data = prop_wide2, family = Gamma(link = "log"))
+fitI.5    <- glm(diving_inverts_resp ~ temp, data = prop_wide2, family = Gamma(link = "log"))
+fitI.6    <- glm(diving_inverts_resp ~ diving_fish, data = prop_wide2, family = Gamma(link = "log"))
+
+fitI.7    <- glm(diving_inverts_resp ~ pdo, data = prop_wide2, family = Gamma(link = "log"))
+fitI.8    <- glm(diving_inverts_resp ~ mean_enso, data = prop_wide2, family = Gamma(link = "log"))
+fitI.9    <- glm(diving_inverts_resp ~ diving_fish + mean_enso, data = prop_wide2, family = Gamma(link = "log"))
+fitI.10   <- glm(diving_inverts_resp ~ diving_fish + temp + mean_enso + pdo, data = prop_wide2, family = Gamma(link = "log"))
+
+fitI.11   <- glm(diving_inverts_resp ~ diving_fish + mean_enso + pdo + site + year, data = prop_wide2, family = Gamma(link = "log"))
+fitI.12   <- glm(diving_inverts_resp ~ diving_fish + pdo + site + year, data = prop_wide2, family = Gamma(link = "log"))
+fitI.13   <- glm(diving_inverts_resp ~ diving_fish + mean_enso + site + year, data = prop_wide2, family = Gamma(link = "log"))
+
+fitI.14   <- glm(diving_inverts_resp ~ mean_enso + site + year, data = prop_wide2, family = Gamma(link = "log"))
+fitI.15   <- glm(diving_inverts_resp ~ pdo + site + year, data = prop_wide2, family = Gamma(link = "log"))
+
+# AIC table (descending like your original; flip to ascending if you prefer best at top)
+aic_tbl_inverts <- AIC(
+  fitI.null, fitI.1, fitI.2, fitI.3, fitI.4, fitI.5, fitI.6,
+  fitI.7, fitI.8, fitI.9, fitI.10, fitI.11, fitI.12, fitI.13, fitI.14, fitI.15
+) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("model") %>%
+  arrange(desc(AIC))
+
+aic_tbl_inverts
+
+```
+
+this is wrong, site should be a random effect (sort of arguable) and may beta regression family
+```{r}
+library(glmmTMB)
+
+# Null and simple models
+beta.null <- glmmTMB(diving_inverts_resp ~ 1, data = prop_wide2, family = beta_family())
+beta.1    <- glmmTMB(diving_inverts_resp ~ year, data = prop_wide2, family = beta_family())
+beta.2    <- glmmTMB(diving_inverts_resp ~ year + (1 | site), data = prop_wide2, family = beta_family())
+
+# Where the original used + diving_inverts (as predictor), we now use + diving_fish
+beta.3    <- glmmTMB(diving_inverts_resp ~ year + (1 | site) + diving_fish, data = prop_wide2, family = beta_family())
+
+beta.4    <- glmmTMB(diving_inverts_resp ~ year + (1 | site) + temp, data = prop_wide2, family = beta_family())
+beta.5    <- glmmTMB(diving_inverts_resp ~ temp, data = prop_wide2, family = beta_family())
+beta.6    <- glmmTMB(diving_inverts_resp ~ diving_fish, data = prop_wide2, family = beta_family())
+
+beta.7    <- glmmTMB(diving_inverts_resp ~ pdo, data = prop_wide2, family = beta_family())
+beta.8    <- glmmTMB(diving_inverts_resp ~ mean_enso, data = prop_wide2, family = beta_family())
+beta.9    <- glmmTMB(diving_inverts_resp ~ diving_fish + mean_enso, data = prop_wide2, family = beta_family())
+beta.10   <- glmmTMB(diving_inverts_resp ~ diving_fish + temp + mean_enso + pdo, data = prop_wide2, family = beta_family())
+
+beta.11   <- glmmTMB(diving_inverts_resp ~ diving_fish + mean_enso + pdo + (1 | site) + year, data = prop_wide2, family = beta_family())
+beta.12   <- glmmTMB(diving_inverts_resp ~ diving_fish + pdo + (1 | site) + year, data = prop_wide2, family = beta_family())
+beta.13   <- glmmTMB(diving_inverts_resp ~ diving_fish + mean_enso + (1 | site) + year, data = prop_wide2, family = beta_family())
+
+beta.14   <- glmmTMB(diving_inverts_resp ~ mean_enso + (1 | site) + year, data = prop_wide2, family = beta_family())
+beta.15   <- glmmTMB(diving_inverts_resp ~ pdo + (1 | site) + year, data = prop_wide2, family = beta_family())
+```
+
+```{r}
+aic_tbl_beta <- AIC(
+  beta.null, beta.1, beta.2, beta.3, beta.4, beta.5, beta.6,
+  beta.7, beta.8, beta.9, beta.10, beta.11, beta.12, beta.13, beta.14, beta.15
+) %>%
+  as.data.frame() %>%
+  rownames_to_column("model") %>%
+  arrange(AIC)   # lowest (best) at top
+
+aic_tbl_beta
+```
+
+```{r}
+prop_wide %>%
+  ggplot(aes(mean_enso, pdo)) +
+  geom_point()
+```
+```{r}
+plot(ggpredict(beta.6, terms = "diving_fish"))
+```
+
+```{r}
+prop_wide <- all_taxa %>%
+  select(mussel_count, year, site) %>%
+  left_join(prop_wide, ., by = c("year", "site"))
+prop_wide$year <- factor(prop_wide$year)
+
+beta.null <- glmmTMB(diving_inverts ~ 1, data = prop_wide, family = beta_family())
+beta.1    <- glmmTMB(diving_inverts ~ (1 | year), data = prop_wide, family = beta_family())
+beta.2    <- glmmTMB(diving_inverts ~ (1 | year) + (1 | site), data = prop_wide, family = beta_family())
+
+# Where the original used + diving_inverts (as predictor), we now use + diving_fish
+beta.3    <- glmmTMB(diving_inverts ~ (1 | year) + (1 | site) + diving_fish, data = prop_wide, family = beta_family())
+
+beta.4    <- glmmTMB(diving_inverts ~ (1 | year) + (1 | site) + temp, data = prop_wide, family = beta_family())
+beta.5    <- glmmTMB(diving_inverts ~ temp, data = prop_wide, family = beta_family())
+beta.6    <- glmmTMB(diving_inverts ~ diving_fish, data = prop_wide, family = beta_family())
+
+beta.7    <- glmmTMB(diving_inverts ~ pdo, data = prop_wide, family = beta_family())
+beta.8    <- glmmTMB(diving_inverts ~ mean_enso, data = prop_wide, family = beta_family())
+beta.9    <- glmmTMB(diving_inverts ~ diving_fish + mean_enso, data = prop_wide, family = beta_family())
+beta.10   <- glmmTMB(diving_inverts ~ diving_fish + temp + mean_enso + pdo, data = prop_wide, family = beta_family())
+
+beta.11   <- glmmTMB(diving_inverts ~ diving_fish + mean_enso + pdo + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.12   <- glmmTMB(diving_inverts ~ diving_fish + pdo + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.13   <- glmmTMB(diving_inverts ~ diving_fish + mean_enso + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+
+beta.14   <- glmmTMB(diving_inverts ~ mean_enso + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.15   <- glmmTMB(diving_inverts ~ pdo + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+
+beta.16   <- glmmTMB(diving_inverts ~ mussel_count + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.17   <- glmmTMB(diving_inverts ~ mussel_count + pdo + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.18   <- glmmTMB(diving_inverts ~ mussel_count + mean_enso + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.19   <- glmmTMB(diving_inverts ~ mussel_count + diving_fish + mean_enso + pdo + (1 | site) + (1 | year), data = prop_wide, family = beta_family())
+beta.20   <- glmmTMB(diving_inverts ~ mussel_count, data = prop_wide, family = beta_family())
+```
+
+```{r}
+aic_tbl_beta <- AIC(
+  beta.null, beta.1, beta.2, beta.3, beta.4, beta.5, beta.6,
+  beta.7, beta.8, beta.9, beta.10, beta.11, beta.12, beta.13, beta.14, beta.15,
+  beta.16, beta.17, beta.18, beta.19, beta.20
+) %>%
+  as.data.frame() %>%
+  rownames_to_column("model") %>%
+  arrange(AIC)   # lowest (best) at top
+
+aic_tbl_beta
+```
+
+```{r}
+summary(beta.11)
+```
+
+```{r}
+library(patchwork)
+pb11_mean <- ggpredict(beta.11, terms = "mean_enso")
+pb11_pdo  <- ggpredict(beta.11, terms = "pdo")
+pb11_fish <- ggpredict(beta.11, terms = "diving_fish")
+pb11_enso <- ggpredict(beta.11, terms = "mean_enso")
+pb11_year <- ggpredict(beta.11, terms = "year", type = "random")
+
+plot(pb11_mean, colors = "blue") +
+plot(pb11_pdo) /
+plot(pb11_fish) +
+plot(pb11_enso)/
+plot(pb11_year)
+```
+
+```{r}
+plot(predict_response(beta.11, terms = "year", margin = "empirical"))
+```
+```{r}
+plot(predict_response(beta.11, terms = "diving_fish", margin = "empirical", condition = c("site" = "KATM")))
+```
+
+there's a few ways to parameraterize these depending on what we want to get out of it. 
+1. is the question if birds change abundance (or proportion), or is it what effects bird niche proportions
+2. thinking of the blob as binary is lame, using temp as a continuous variable makes it interesting
+    a. find a good way to identify the warm years?
+3. hav'nt touched the winter bird data yet. maybe that should be part of this    
+
+steps
+1. decide which temperature to use (hobo vs gak)
+2. use temp as explanatory variable 
+    model proportions and counts
+    
+1. look at all the temps data
+
+```{r plot gak1 temp}
+gak1 %>%
+  filter(year > 2005) %>%
+  mutate(temp = str_replace(`Temperature_[C],`, ",", "")) %>%
+  mutate(temp = as.numeric(temp),
+         depth = as.numeric(`Pressure_[dbar],`)) %>%
+  filter(depth < 5) %>%
+  group_by(year) %>%
+  summarise(temp = mean(as.numeric(temp), na.rm = T)) %>%
+  mutate(temp_scaled = as.numeric(scale(temp))) %>%
+    mutate(avg = mean(temp),
+         anomaly = temp - avg) %>%
+  mutate(sign = if_else(anomaly >= 0, "Positive", "Negative"),
+         year = factor(year)) %>%
+  ggplot(aes(year, anomaly, fill = sign)) +
+  geom_col() +
+  scale_fill_manual(
+    values = c(Positive = "#d62728", Negative = "#3182bd"),
+    guide = "none"
+  ) +
+  geom_hline(yintercept = 0, color = "grey40") +
+  theme_minimal()
+
+```
+this is the temp anomaly from gak1. do intertidal temps show the same pattern
+
+```{r plot hobo temps}
+temperature %>%
+  filter(exposure == "water", tide_height == 0.5, year > 2005) %>%
+  group_by(year, block) %>%
+  summarise(temp = mean(temperature, na.rm = TRUE), .groups = "drop") %>%
+  group_by(block) %>%                              # <-- compute block-level mean
+  mutate(
+    avg     = mean(temp, na.rm = TRUE),
+    anomaly = temp - avg,
+    sign    = if_else(anomaly >= 0, "Positive", "Negative")
+  ) %>%
+  ungroup() %>%
+  mutate(year = factor(year)) %>%
+  ggplot(aes(year, anomaly, fill = sign)) +
+  geom_col() +
+  scale_fill_manual(values = c(Positive = "#d62728", Negative = "#3182bd"),
+                    guide  = "none") +
+  geom_hline(yintercept = 0, color = "grey40") +
+  facet_wrap(~ block, ncol = 1) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+there are some differences in between the gak and the hobo data but they largely tell the same story. We'll use the hobo data for the analysis
+
+```{r summarize hobo temps}
+hobo_temps <- temperature %>%
+  filter(exposure == "water", tide_height == 0.5, year > 2005) %>%
+  group_by(year, block) %>%
+  summarise(temp = mean(temperature, na.rm = TRUE), .groups = "drop") %>%
+  group_by(block) %>%                              # <-- compute block-level mean
+  mutate(
+   # avg     = mean(temp, na.rm = TRUE),
+   #anomaly = temp - avg,
+    temp_scaled = as.numeric(scale(temp))
+  ) %>%
+  ungroup() %>%
+  rename(site = block)
+  
+```
+
+now combine the temperatures with the bird data
+```{r summarise birds by niche}
+prop_df <- bird_densities %>%
+filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
+                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
+                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
+                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+  left_join(nppsd,              by = c("species" = "species_code")) %>%
+  left_join(functional_groups,  by = c("species" = "species_code")) %>%
+  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+  filter(density != 0,
+         !niche %in% c("land duck food", "land fish", "surface inverts")) %>%
+  # 1) Aggregate to niche within site-year
+  group_by(year, site, niche) %>%
+  summarise(density_log = sum(log(density + 1)),
+         count = sum(count),
+         .groups = "drop") %>%
+  # 2) Compute proportions across niches within each site-year
+  group_by(year, site) %>%
+  mutate(proportion = density_log / sum(density_log)) %>%
+  ungroup()
+```
+
+```{r create full modeling dataframe}
+#summarize proportions
+prop_wide <- prop_df %>%
+  select(-density_log) %>%
+  # keep long structure so niche stays as a column
+  group_by(year, site, niche) %>%
+  summarise(
+    proportion   = sum(proportion, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = niche, values_from = proportion) %>%
+  mutate(across(3:10, ~ replace_na(., 0))) %>%
+  rename_with(~ paste0("prop_", .x), 3:10) %>%
+  mutate(year = as.numeric(year)) %>%
+  left_join(hobo_temps, by = c("year", "site"))
+
+#summarize counts
+count_wide <- prop_df %>%
+  select(-density_log) %>%
+  # keep long structure so niche stays as a column
+  group_by(year, site, niche) %>%
+  summarise(
+    count   = sum(count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = niche, values_from = count) %>%
+  mutate(across(3:10, ~ replace_na(., 0))) %>%
+  rename_with(~ paste0("count_", .x), 3:10) %>%
+  mutate(year = as.numeric(year))
+
+#combine counts and proportions
+model_df <- left_join(prop_wide, count_wide, by = c("year", "site"))
+
+#add mussels
+model_df <- all_taxa %>%
+  select(mussel_count, year, site) %>%
+  left_join(model_df, ., by = c("year", "site"))
+
+#add PDO and ENSO
+pdo_annualized <- pdo %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarise(pdo = mean(value))
+
+model_df <- left_join(model_df, pdo_annualized, by = "year") %>%
+  left_join(., enso, by = "year")
+
+#remove spaces in column names
+names(model_df) <- janitor::make_clean_names(names(model_df))
+```
+
+fit beta distributed models for the proportion of invert eating diving birds
+```{r fit beta models for proportions}
+beta.null <- glmmTMB(prop_diving_inverts ~ 1, data = model_df, family = beta_family())
+beta.1 <- glmmTMB(prop_diving_inverts ~ year, data = model_df, family = beta_family())
+beta.2 <- glmmTMB(prop_diving_inverts ~ site, data = model_df, family = beta_family())
+beta.3 <- glmmTMB(prop_diving_inverts ~ prop_diving_fish, data = model_df, family = beta_family())
+
+beta.4 <- glmmTMB(prop_diving_inverts ~ prop_diving_fish + year + site, data = model_df, family = beta_family())
+beta.5 <- glmmTMB(prop_diving_inverts ~ temp_scaled + year + site, data = model_df, family = beta_family())
+beta.6 <- glmmTMB(prop_diving_inverts ~ mussel_count + year + site, data = model_df, family = beta_family())
+
+beta.7 <- glmmTMB(prop_diving_inverts ~ pdo + year + site, data = model_df, family = beta_family())
+beta.8 <- glmmTMB(prop_diving_inverts ~ prop_diving_fish + temp_scaled + year + site, data = model_df, family = beta_family())
+
+beta.9 <- glmmTMB(prop_diving_inverts ~ temp_scaled, data = model_df, family = beta_family())
+beta.10 <- glmmTMB(prop_diving_inverts ~ temp_scaled, data = model_df, family = beta_family())
+```
+
+```{r beta model comparisson table}
+aic_tbl_beta <- AIC(
+  beta.null, beta.1, beta.2, beta.3, beta.4, beta.5, beta.6,
+  beta.7, beta.8
+) %>%
+  as.data.frame() %>%
+  rownames_to_column("model") %>%
+  arrange(AIC)   # lowest (best) at top
+
+aic_tbl_beta
+```
+fit poisson distributed models for the counts of invert eating diving birds
+```{r fit poisson models for proportions}
+# All models use the same response and family
+fit.pois.null <- glmmTMB(
+  count_diving_inverts ~ 1,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.1 <- glmmTMB(
+  count_diving_inverts ~ year,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.2 <- glmmTMB(
+  count_diving_inverts ~ site,
+  data = model_df,
+  family = poisson()
+)
+
+# If your predictor is a proportion, keep it as prop_diving_fish; if you have a count, use count_diving_fish
+fit.pois.3 <- glmmTMB(
+  count_diving_inverts ~ prop_diving_fish,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.4 <- glmmTMB(
+  count_diving_inverts ~ prop_diving_fish + year + site,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.5 <- glmmTMB(
+  count_diving_inverts ~ temp_scaled + year + site,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.6 <- glmmTMB(
+  count_diving_inverts ~ mussel_count + year + site,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.7 <- glmmTMB(
+  count_diving_inverts ~ pdo + year + site,
+  data = model_df,
+  family = poisson()
+)
+
+fit.pois.8 <- glmmTMB(
+  count_diving_inverts ~ prop_diving_fish + temp_scaled + year + site,
+  data = model_df,
+  family = poisson()
+)
+```
+
+```{r}
+AIC(fit.pois.null, fit.pois.1, fit.pois.2, fit.pois.3, fit.pois.4, fit.pois.5, fit.pois.6, fit.pois.7, fit.pois.8) %>% arrange(AIC)
+```
+```{r}
+pb11_mean <- ggpredict(beta.11, terms = "mean_enso")
+pb11_pdo  <- ggpredict(beta.11, terms = "pdo")
+pb11_fish <- ggpredict(beta.11, terms = "diving_fish")
+pb11_enso <- ggpredict(beta.11, terms = "mean_enso")
+pb11_year <- ggpredict(beta.11, terms = "year", type = "random")
+
+plot(pb11_mean, colors = "blue") +
+plot(pb11_pdo) /
+plot(pb11_fish) +
+plot(pb11_enso)/
+plot(pb11_year)
+
+plot(ggpredict(fit.pois.6, terms = "mussel_count")) /
+  plot(ggpredict(fit.pois.6, terms = "year"))
+```
+next steps:
+-figure out the random effects structures or lack theirof
+-probably write down specific questions so that fitting the models actually makes sense
+-make sure there aren't autocorrelation issues
+-is there a better family than poison, need to check for overdisperson and maybe go quasibonomail
+-try modeling temp as a smooth in case there is a stabilizing or non linear effeect!
