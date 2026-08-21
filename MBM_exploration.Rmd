@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output: html_document
 ---
 
 ```{r warning=FALSE}
@@ -9,6 +9,7 @@ library(janitor)
 library(RColorBrewer)
 library(ggeffects)
 library(glmmTMB)
+library(DHARMa)
 ```
 
 ```{r read in data}
@@ -1761,20 +1762,18 @@ plot(bcp_gak1, main = "GAK1 Temp changepoints")
 ```
 
 ```{r}
-library(DirichletReg)
-
-niche_df <- bird_densities %>%
-  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
-                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
-                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
-                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
-  left_join(nppsd, by = c("species" = "species_code")) %>%
-  left_join(functional_groups, by = c("species" = "species_code")) %>%
-  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
-  filter(density != 0) %>%
-  filter(!niche %in% c("land duck food", "land fish", "surface inverts")) %>%
-  group_by(year, site, niche) %>%
-  summarise(prop = density / sum(density))
+#niche_df <- bird_densities %>%
+#  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
+#                         "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES",
+#                         "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH",
+#                         "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA")) %>%
+#  left_join(nppsd, by = c("species" = "species_code")) %>%
+#  left_join(functional_groups, by = c("species" = "species_code")) %>%
+#  mutate(niche = paste(functional_group, diet, sep = " ")) %>%
+#  filter(density != 0) %>%
+#  filter(!niche %in% c("land duck food", "land fish", "surface inverts")) %>%
+#  group_by(year, site, niche) %>%
+#  summarise(prop = density / sum(density))
 
 prop_df <- bird_densities %>%
 filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA",
@@ -1836,7 +1835,6 @@ prop_wide %>%
 
 
 ```{r}
-library(statmod)
 #try some models
 prop_wide <- janitor::clean_names(prop_wide)
 fit.null <- glm(diving_fish ~ 1, data = prop_wide, family = Gamma(link = "log"))
@@ -1853,17 +1851,7 @@ AIC(fit.null, fit.1, fit.2, fit.3, fit.4, fit.5, fit.6) %>% arrange(AIC)
 ```{r}
 summary(fit.5)
 ```
-see if there is a way to make these into good models. 
-why is the above graph such a good relationship but the fish eaters vs benthivores relationship wasnt obvious from the streamplot
-```{r}
-library(ggeffects)
 
-predict.5 <- predict_response(fit.5, terms = "temp")
-
-ggplot(predict.5, aes(x, predicted)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1)
-```
 ```{r}
 ggcorrplot(corr = cor(prop_wide[,-2]), lab = T)
 ```
@@ -1892,7 +1880,6 @@ pdo <- read.csv("data/pdo.timeseries.sstens.csv") %>%
 ```
 
 ```{r}
-
 enso %>%
   mutate(sign = if_else(mean_enso >= 0, "Positive", "Negative")) %>%
   ggplot(aes(x = year, y = mean_enso)) +
@@ -1904,7 +1891,6 @@ enso %>%
   geom_hline(yintercept = 0, color = "grey40") +
   labs(x = "Year", y = "Mean ENSO", title = "ENSO: Positive (red) vs Negative (blue)") +
   theme_minimal()
-
 ```
 ```{r}
 pdo %>%
@@ -1959,7 +1945,6 @@ AIC(fit.null, fit.1, fit.2, fit.3, fit.4, fit.5, fit.6, fit.7, fit.8, fit.9, fit
 
 
 ```{r}
-library(dplyr)
 
 # Ensure response is strictly positive for Gamma(log)
 prop_wide2 <- prop_wide %>%
@@ -2201,6 +2186,11 @@ model_df <- model_df %>%
                           year >= 2014 ~ "post"),
          blob = factor(blob, , levels = c("pre", "post")),
          year_f = factor(year)) #for fitting random effects
+
+#add transect effort to use as offset for poisson models
+transects_summary$year <- as.numeric(transects_summary$year)
+model_df <- left_join(model_df, transects_summary, by = c("year", "site"))
+
 #remove spaces in column names
 names(model_df) <- janitor::make_clean_names(names(model_df))
 model_df <- na.omit(model_df)
@@ -2231,9 +2221,8 @@ model_df %>%
 fit beta distributed models for the proportion of invert eating diving birds
 using the proportions as response variables is good but explaining them with other proportions doesn't make sense because they are inherently linked
 you can argue that getting rid of year makes sense because everything is annualized
-need to work on nesting and offsets to make sure it is specified correctly
 
-```{r fit beta models for proportions}
+```{r fit beta models for invert proportions}
 inverts.beta.1 <- glmmTMB(prop_diving_inverts ~ 1, data = model_df, family = beta_family(), REML = TRUE)
 inverts.beta.2 <- glmmTMB(prop_diving_inverts ~ (1 | year_f), data = model_df, family = beta_family(), REML = TRUE)
 inverts.beta.3 <- glmmTMB(prop_diving_inverts ~ (1 | site), data = model_df, family = beta_family(), REML = TRUE)
@@ -2252,7 +2241,7 @@ inverts.beta.12 <- glmmTMB(prop_diving_inverts ~ temp_scaled + blob, data = mode
 inverts.beta.13 <- glmmTMB(prop_diving_inverts ~ blob*temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
 ```
 
-```{r beta model comparisson table}
+```{r invert beta model comparisson table}
 list(
   inverts.beta.1,
   inverts.beta.2,
@@ -2276,57 +2265,45 @@ summary(inverts.beta.9)
 Interpretation:
 ```{r}
 intercept = fixef(inverts.beta.9)$cond["(Intercept)"]
-blob = fixef(inverts.beta.9)$cond["blobpost"]
+blob_coef = fixef(inverts.beta.9)$cond["blobpost"]
 
-data.frame(blob = c("pre", "post"),
-           estimate = c(plogis(intercept), 
-                        plogis(intercept + blob)))
+pre  <- plogis(intercept)
+post <- plogis(intercept + blob_coef)
+
+data.frame(
+  level = c("pre-blob", "post-blob"),
+  proportion = c(pre, post),
+  change = post - pre,
+  pct_change = (post/pre - 1) * 100
+) %>%
+  remove_rownames()
 ```
-those are reported on the proportion scale so there is a 5% decrease in the proportion of birds that are diving invertebrate foragers
+
 
 ```{r}
 plot(predict_response(inverts.beta.9, terms = "blob"))
 ```
 
 Now model the proportion of diving piscivores
-```{r fit beta models for proportions}
+```{r fit beta models for fish proportions}
 fish.beta.1 <- glmmTMB(prop_diving_fish ~ 1, data = model_df, family = beta_family(), REML = TRUE)
 fish.beta.2 <- glmmTMB(prop_diving_fish ~ (1 | year_f), data = model_df, family = beta_family(), REML = TRUE)
 fish.beta.3 <- glmmTMB(prop_diving_fish ~ (1 | site), data = model_df, family = beta_family(), REML = TRUE)
 fish.beta.4 <- glmmTMB(prop_diving_fish ~ (1 | year_f) + (1 | site), data = model_df, family = beta_family(), REML = TRUE)
 
 fish.beta.5 <- glmmTMB(prop_diving_fish ~ temp_scaled + (1 | year_f) + (1 | site), data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.6 <- glmmTMB(prop_diving_fish ~ mussel_count + (1 | year_f) + (1 | site), data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.7 <- glmmTMB(prop_diving_fish ~ temp_scaled + mussel_count + (1 | year_f) + (1 | site), data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.6 <- glmmTMB(prop_diving_fish ~ blob + (1 | site) + (1 | year_f), data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.7 <- glmmTMB(prop_diving_fish ~ temp_scaled + blob + (1 | site) + (1 | year_f), data = model_df, family = beta_family(), REML = TRUE)
 
-fish.beta.8 <- glmmTMB(prop_diving_fish ~ temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.9 <- glmmTMB(prop_diving_fish ~ blob + (1 | site) + (1 | year_f), data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.8 <- glmmTMB(prop_diving_fish ~ blob, data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.9 <- glmmTMB(prop_diving_fish ~ blob + temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.10 <- glmmTMB(prop_diving_fish ~ temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
 
-fish.beta.10 <- glmmTMB(prop_diving_fish ~ blob + temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.11 <- glmmTMB(prop_diving_fish ~ temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.12 <- glmmTMB(prop_diving_fish ~ temp_scaled + blob, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.13 <- glmmTMB(prop_diving_fish ~ blob*temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-
-#remove random effects...
-fish.beta.1 <- glmmTMB(prop_diving_fish ~ 1, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.2 <- glmmTMB(prop_diving_fish ~ year, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.3 <- glmmTMB(prop_diving_fish ~ site, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.4 <- glmmTMB(prop_diving_fish ~ year + site, data = model_df, family = beta_family(), REML = TRUE)
-
-fish.beta.5 <- glmmTMB(prop_diving_fish ~ temp_scaled + year + site, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.6 <- glmmTMB(prop_diving_fish ~ mussel_count + year + site, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.7 <- glmmTMB(prop_diving_fish ~ temp_scaled + mussel_count + year + site, data = model_df, family = beta_family(), REML = TRUE)
-
-fish.beta.8 <- glmmTMB(prop_diving_fish ~ temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.9 <- glmmTMB(prop_diving_fish ~ blob + site + year, data = model_df, family = beta_family(), REML = TRUE)
-
-fish.beta.10 <- glmmTMB(prop_diving_fish ~ blob + temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.11 <- glmmTMB(prop_diving_fish ~ temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.12 <- glmmTMB(prop_diving_fish ~ temp_scaled + blob, data = model_df, family = beta_family(), REML = TRUE)
-fish.beta.13 <- glmmTMB(prop_diving_fish ~ temp_scaled*year, data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.11 <- glmmTMB(prop_diving_fish ~ blob*temp_scaled, data = model_df, family = beta_family(), REML = TRUE)
+fish.beta.12 <- glmmTMB(prop_diving_fish ~ blob*temp_scaled + (1 | year_f) + (1 | site), data = model_df, family = beta_family(), REML = TRUE)
 ```
 
-```{r beta model comparisson table}
+```{r fish beta model comparisson table}
 list(
   fish.beta.1,
   fish.beta.2,
@@ -2339,31 +2316,43 @@ list(
   fish.beta.9,
   fish.beta.10,
   fish.beta.11,
-  fish.beta.12,
-  fish.beta.13
+  fish.beta.12
 ) %>%
   AICcmodavg::aictab()
 ```
+interpret top piscivore model
+```{r}
+summary(fish.beta.3)
+```
+the proportion of diving piscivores in the ecosystem is not influenced by the blob or temperature
+but there is variation between sites
+```{r}
+model_df %>%
+  ggplot(aes(year, prop_diving_fish, color = site,)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth() +
+  labs(title = "proportion of diving fish in system varies between sites but not temp regimes")
+```
+
 
 fit poisson distributed models for the counts of invert eating diving birds
 offset of area surveyed
 this accounts for differing effort but still allows us to use count data offset(log(area))
-```{r fit poisson models for proportions}
-fish.poisson.1 <- glmmTMB(count_diving_fish ~ 1, data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.2 <- glmmTMB(count_diving_fish ~ (1 | year), data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.3 <- glmmTMB(count_diving_fish ~ (1 | site), data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.4 <- glmmTMB(count_diving_fish ~ (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE)
+```{r fit poisson models for fish counts}
+fish.poisson.1 <- glmmTMB(count_diving_fish ~ 1, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+fish.poisson.2 <- glmmTMB(count_diving_fish ~ (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+fish.poisson.3 <- glmmTMB(count_diving_fish ~ (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+fish.poisson.4 <- glmmTMB(count_diving_fish ~ (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
 
-fish.poisson.5 <- glmmTMB(count_diving_fish ~ mussel_count, data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.6 <- glmmTMB(count_diving_fish ~ temp_scaled, data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.7 <- glmmTMB(count_diving_fish ~ blob, data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.8 <- glmmTMB(count_diving_fish ~ mussel_count + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.9 <- glmmTMB(count_diving_fish ~ temp_scaled + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.10 <- glmmTMB(count_diving_fish ~ blob + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE)
+fish.poisson.5 <- glmmTMB(count_diving_fish ~ temp_scaled, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+fish.poisson.6 <- glmmTMB(count_diving_fish ~ blob, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
 
-fish.poisson.11 <- glmmTMB(count_diving_fish ~ blob + temp_scaled + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.12 <- glmmTMB(count_diving_fish ~ blob + temp_scaled + mussel_count + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE)
-fish.poisson.13 <- glmmTMB(count_diving_fish ~ temp_scaled*year, data = model_df, family = poisson(), REML = TRUE)
+fish.poisson.7 <- glmmTMB(count_diving_fish ~ temp_scaled + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+fish.poisson.8 <- glmmTMB(count_diving_fish ~ blob + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+
+fish.poisson.9 <- glmmTMB(count_diving_fish ~ blob + temp_scaled + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+fish.poisson.10 <- glmmTMB(count_diving_fish ~ temp_scaled*blob + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
 ```
 
 ```{r}
@@ -2378,43 +2367,46 @@ fish_poisson_models <- list(
   fish.poisson.7,
   fish.poisson.8,
   fish.poisson.9,
-  fish.poisson.10,
-  fish.poisson.11,
-  fish.poisson.12,
-  fish.poisson.13
+  fish.poisson.10
 )
 
 AICcmodavg::aictab(fish_poisson_models)
 
 ```
 ```{r}
-summary(fish.poisson.12)
-```
-
-```{r}
-plot(ggpredict(fish.poisson.12, terms = "mussel_count")) /
-  plot(ggpredict(fish.poisson.12, terms = "blob")) /
-  plot(ggpredict(fish.poisson.12, terms = "temp_scaled"))
+summary(fish.poisson.10)
 ```
 ```{r}
-plot(residuals(inverts_poisson.12, type = "pearson"))
+plot(predict_response(fish.poisson.10, terms = "temp_scaled")) + 
+  plot(predict_response(fish.poisson.10, terms = "blob"))
 ```
 
 
 ```{r}
-inverts_poisson.1  <- glmmTMB(count_diving_inverts ~ 1, data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.2  <- glmmTMB(count_diving_inverts ~ (1 | year), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.3  <- glmmTMB(count_diving_inverts ~ (1 | site), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.4  <- glmmTMB(count_diving_inverts ~ (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.5  <- glmmTMB(count_diving_inverts ~ mussel_count, data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.6  <- glmmTMB(count_diving_inverts ~ temp_scaled, data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.7  <- glmmTMB(count_diving_inverts ~ blob, data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.8  <- glmmTMB(count_diving_inverts ~ mussel_count + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.9  <- glmmTMB(count_diving_inverts ~ temp_scaled + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.10 <- glmmTMB(count_diving_inverts ~ blob + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.11 <- glmmTMB(count_diving_inverts ~ blob + temp_scaled + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.12 <- glmmTMB(count_diving_inverts ~ blob + temp_scaled + mussel_count + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE)
-inverts_poisson.13 <- glmmTMB(count_diving_inverts ~ temp_scaled * year, data = model_df, family = poisson(), REML = TRUE)
+plot(residuals(inverts_poisson.10, type = "pearson"))
+```
+
+residuals look pretty random and evenly distributed
+
+now look at the counts of benthivores
+
+```{r fit poisson models for diving invert counts}
+inverts_poisson.1  <- glmmTMB(count_diving_inverts ~ 1, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.2  <- glmmTMB(count_diving_inverts ~ (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.3  <- glmmTMB(count_diving_inverts ~ (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.4  <- glmmTMB(count_diving_inverts ~ (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+
+inverts_poisson.5  <- glmmTMB(count_diving_inverts ~ mussel_count, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.6  <- glmmTMB(count_diving_inverts ~ temp_scaled, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.7  <- glmmTMB(count_diving_inverts ~ blob, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+
+inverts_poisson.8  <- glmmTMB(count_diving_inverts ~ mussel_count + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.9  <- glmmTMB(count_diving_inverts ~ temp_scaled + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.10 <- glmmTMB(count_diving_inverts ~ blob + (1 | year) + (1 | site), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.11 <- glmmTMB(count_diving_inverts ~ blob + temp_scaled + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.12 <- glmmTMB(count_diving_inverts ~ blob + temp_scaled + mussel_count + (1 | site) + (1 | year), data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.13 <- glmmTMB(count_diving_inverts ~ temp_scaled*blob, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
+inverts_poisson.14 <- glmmTMB(count_diving_inverts ~ blob*temp_scaled + site + mussel_count + year, data = model_df, family = poisson(), REML = TRUE, offset = log(area))
 ```
 
 ```{r}
@@ -2431,7 +2423,8 @@ list(
   inverts_poisson.10,
   inverts_poisson.11,
   inverts_poisson.12,
-  inverts_poisson.13
+  inverts_poisson.13,
+  inverts_poisson.14
 ) %>%
   AICcmodavg::aictab()
 
@@ -2458,3 +2451,259 @@ next steps:
 
 is there a heatwave effect on benthivores
 is there a heatwave effect on fishivores
+
+model the ecosystem redundancy?
+
+
+```{r}
+model_df %>%
+  ggplot(aes(year, count_diving_fish, color = site,)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth()
+```
+
+```{r}
+model_df %>%
+  ggplot(aes(temp, count_diving_fish, color = site,)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+```{r}
+
+
+model_df %>%
+  ggplot(aes(temp_scaled, count_diving_fish)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "steelblue") +
+  facet_wrap(~ blob) +
+  theme_minimal()
+
+
+```
+```{r}
+
+pred_int <- ggpredict(fish.poisson.10, 
+                      terms = c("temp_scaled", "blob"))
+
+plot(pred_int)
+```
+for testing model fit
+```{r test poisson model fit}
+res <- simulateResiduals(inverts_poisson.12, n = 1000, refit = FALSE)
+
+testDispersion(res)                 # over/under-dispersion test
+testZeroInflation(res)              # evidence for extra zeros?
+testOutliers(res)  
+res_sim <- recalculateResiduals(res, group = ~site)
+testTemporalAutocorrelation(res_sim, time = ~year)
+
+library(performance)
+check_overdispersion(fish.negbin.3)
+```
+ok all the models are overdispersed. refit them as negbin
+```{r fit negbin models for piscivore counts to solve overdisperssion}
+fish.negbin.1 <- glmmTMB(count_diving_fish ~ 1, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+fish.negbin.2 <- glmmTMB(count_diving_fish ~ (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+fish.negbin.3 <- glmmTMB(count_diving_fish ~ (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+fish.negbin.4 <- glmmTMB(count_diving_fish ~ (1 | site) + (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+
+fish.negbin.5 <- glmmTMB(count_diving_fish ~ temp_scaled, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+fish.negbin.6 <- glmmTMB(count_diving_fish ~ blob, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+
+fish.negbin.7 <- glmmTMB(count_diving_fish ~ temp_scaled + (1 | year) + (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+fish.negbin.8 <- glmmTMB(count_diving_fish ~ blob + (1 | year) + (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+
+fish.negbin.9 <- glmmTMB(count_diving_fish ~ blob + temp_scaled + (1 | site) + (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+fish.negbin.10 <- glmmTMB(count_diving_fish ~ temp_scaled*blob + (1 | site) + (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+```
+
+```{r}
+list(
+  fish.negbin.1,
+  fish.negbin.2,
+  fish.negbin.3,
+  fish.negbin.4,
+  fish.negbin.5,
+  fish.negbin.6,
+  fish.negbin.7,
+  fish.negbin.8,
+  fish.negbin.9,
+  fish.negbin.10
+) %>%
+  AICcmodavg::aictab()
+```
+```{r fit negbin models for diving invert counts}
+inverts_negbin.1  <- glmmTMB(count_diving_inverts ~ 1, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.2  <- glmmTMB(count_diving_inverts ~ (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.3  <- glmmTMB(count_diving_inverts ~ (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.4  <- glmmTMB(count_diving_inverts ~ (1 | site) + (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+
+inverts_negbin.5  <- glmmTMB(count_diving_inverts ~ mussel_count, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.6  <- glmmTMB(count_diving_inverts ~ temp_scaled, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.7  <- glmmTMB(count_diving_inverts ~ blob, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+
+inverts_negbin.8  <- glmmTMB(count_diving_inverts ~ mussel_count + (1 | year) + (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.9  <- glmmTMB(count_diving_inverts ~ temp_scaled + (1 | year) + (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.10 <- glmmTMB(count_diving_inverts ~ blob + (1 | year) + (1 | site), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.11 <- glmmTMB(count_diving_inverts ~ blob + temp_scaled + (1 | site) + (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.12 <- glmmTMB(count_diving_inverts ~ blob + temp_scaled + mussel_count + (1 | site) + (1 | year), data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.13 <- glmmTMB(count_diving_inverts ~ temp_scaled*blob, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+inverts_negbin.14 <- glmmTMB(count_diving_inverts ~ blob*temp_scaled + site + mussel_count + year, data = model_df, family = nbinom2(), REML = TRUE, offset = log(area))
+```
+
+```{r}
+list(
+  inverts_negbin.1,
+  inverts_negbin.2,
+  inverts_negbin.3,
+  inverts_negbin.4,
+  inverts_negbin.5,
+  inverts_negbin.6,
+  inverts_negbin.7,
+  inverts_negbin.8,
+  inverts_negbin.9,
+  inverts_negbin.10,
+  inverts_negbin.11,
+  inverts_negbin.12,
+  inverts_negbin.13,
+  inverts_negbin.14
+) %>%
+  AICcmodavg::aictab()
+
+```
+bring in the winter data...
+```{r}
+url <- "https://workspace.aoos.org/published/file/7ae2d23d-0058-487e-83d8-a796f27dea5e/KATMKEFJ_2008-2024_Winter_MBM_Observations.csv?source=catalog&portalId=25"
+winter_obs <- read_csv(url)  %>%
+  mutate(
+    site = substr(TripID, 1, 4),
+    year = substr(TripID, 9, 12)
+  )
+
+url2 <- "https://workspace.aoos.org/published/file/42387d7e-8843-4733-bfe2-fb755bc4f726/KATMKEFJ_2008-2024_Winter_MBM_Transects.csv?source=catalog&portalId=25"
+winter_transects <- read_csv(url2)  %>%
+  mutate(
+    site = substr(TripID, 1, 4),
+    year = substr(TripID, 9, 12)
+  )
+
+winter_transects <- winter_transects %>% filter(TransType == "COASTAL")
+
+obs$season <- "summer"
+winter_obs$season <- "winter"
+
+all_obs <- rbind(obs, winter_obs)
+
+winter_obs %>% st_as_sf(., coords = c("Long", "Lat"), crs = 4326) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(radius = 1)
+
+#sum species total for each survey (year and site)
+obs_summary_all <- all_obs %>%
+  group_by(year, site, season, Detect_SpeciesCode) %>%
+  summarise(count = sum(Count)) %>%
+  rename(species = Detect_SpeciesCode)
+
+species_all <- unique(all_obs$Detect_SpeciesCode)
+sites <- unique(obs$site)
+years <- unique(obs$year)
+
+#find all unique combinations of year, site, and season then repeat the bird list for each of them
+sampling_events_all <- all_obs %>%
+  distinct(year, site, season)
+
+species_df_all <- species_all %>% 
+  data.frame() %>%
+  rename(species = ".")
+
+species_list_all <- list()
+
+for(i in 1:nrow(sampling_events_all)) {
+  event <- sampling_events_all[i,]
+  species_df_all$year <- event$year
+  species_df_all$site <- event$site
+  species_df_all$season <- event$season
+  species_list_all[[i]] <- species_df_all
+}
+
+#convert list to dataframe
+sampling_events_all_2 <- bind_rows(species_list_all)
+
+#this adds in zeros for the species not observed on each survey but doesn't make up surveys that didn't happen (as opposed to expand_grid)
+bird_summary_all <- left_join(sampling_events_all_2, obs_summary_all, by = c("species", "year", "site", "season")) %>%
+  mutate(count = replace_na(count, 0))
+
+#prepare transects for joining
+transects$season <- "summer"
+winter_transects$season <- "winter"
+names(transects) = names(winter_transects)
+transects <-rbind(transects, winter_transects)
+
+#this adds up all the area and distance sampled in each year
+transects_summary_all <- transects %>% 
+  group_by(year, site, season) %>%
+  summarise(length = sum(Length_km),
+            area = sum(Area_Sampled_km2))
+
+#add the effort to the counts and calculate density
+bird_densities_all <- left_join(bird_summary_all, transects_summary_all, by = c("site", "year", "season")) %>%
+  mutate(density = count/area) %>%
+  relocate(species, .after = site)
+
+bird_densities_all$species[bird_densities_all$species == "NOCR"] <- "AMCR"
+bird_densities_all$species[bird_densities_all$species == "NOSH"] <- "NSHO"
+bird_densities_all$species[bird_densities_all$species == "HEGU"] <- "HERG"
+bird_densities_all$species[bird_densities_all$species == "UNSP"] <- "UNSB"
+
+  
+niche_df <- bird_densities_all %>%
+  filter(!species %in% c("SOSA", "SEOT", "BRBE", "HASE", "STSL", "BLBE", "STJA", "MOOS", "GOEA", "HAPO", "DAPO", "GRWO", "RLHA", "GRWH", "KIWH", "NOHA", "FOSP", "TRES", "RUHU", "MIWH", "PIGR", "BOGU", "UNPE", "BOAT", "YELL", "PORC", "HUWH", "MACR", "UNWH", "REFO", "MOGO", "PEFA", "RIOT", "HBWH", "GYRF", "UNJA", "COYO", "ERMI", "NOGO"), "SEOW") %>%
+  pull(species) %>%
+  unique() %>%
+  data.frame() %>%
+  rename(species_code = ".") %>%
+  left_join(., nppsd, by = c("species_code" = "species_code")) %>%
+  left_join(., functional_groups)
+  
+
+niche_df <- niche_df %>%
+  select(species_code, family, diet, functional_group)
+
+niche_df$diet[niche_df$species_code == "UNSB"] <- "inverts"
+niche_df$functional_group[niche_df$species_code == "UNSB"] <- "land"
+
+niche_df$diet[niche_df$species_code == "SWAN"] <- "duck food"
+niche_df$functional_group[niche_df$species_code == "SWAN"] <- "land"
+
+niche_df$diet[niche_df$species_code == "STEI"] <- "inverts"
+niche_df$functional_group[niche_df$species_code == "STEI"] <- "diving"
+
+niche_df$diet[niche_df$species_code == "EMGO"] <- "duck food"
+niche_df$functional_group[niche_df$species_code == "EMGO"] <- "surface"
+
+niche_df$family[niche_df$family == "Laridae\xa0"] <- "Laridae"
+
+bird_densities_all <- bird_densities_all %>%
+  left_join(., niche_df, by = c("species" = "species_code"))
+```
+
+```{r}
+bird_densities_all %>%
+  filter(species == "HADU", site != "KBAY") %>%
+  ggplot(aes(year, density, group = site)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(season ~ site)
+
+```
+
+```{r}
+bird_densities_all %>%
+  filter(species %in% birds) %>%
+  pivot_wider(!c(year, site, species, season), names_from = )
+```
+
