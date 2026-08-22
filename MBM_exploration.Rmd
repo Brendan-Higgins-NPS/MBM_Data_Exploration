@@ -1991,9 +1991,6 @@ aic_tbl_inverts
 ```
 
 
-```{r}
-plot(ggpredict(beta.6, terms = "diving_fish"))
-```
 
 ```{r}
 library(patchwork)
@@ -2702,8 +2699,47 @@ bird_densities_all %>%
 ```
 
 ```{r}
-bird_densities_all %>%
+friday <- bird_densities_all %>%
   filter(species %in% birds) %>%
-  pivot_wider(!c(year, site, species, season), names_from = )
+  select(year, site, species, season, count, area) %>%
+  pivot_wider(names_from = species, values_from = count)
+
+friday <- friday %>%
+  mutate(year = as.numeric(year)) %>%
+ left_join(., temp_df, by = c("year", "site" = "block")) %>%
+  filter(site != "KBAY") %>%
+  mutate(blob = case_when(
+      year < 2014 ~ "pre",
+      year >= 2014 ~ "post"))
+  
+
+fit.1 <- glmmTMB(SEOT ~ 1, data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.2 <- glmmTMB(SEOT ~ year, data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.3 <- glmmTMB(SEOT ~ (1 | season), data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.4 <- glmmTMB(SEOT ~ (1 | site), data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.5 <- glmmTMB(SEOT ~ avg_temp, data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.6 <- glmmTMB(SEOT ~ (1 | site) + year + (1 | season) + avg_temp, data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.7 <- glmmTMB(SEOT ~ (1 | site) + year + (1 | season) + blob, data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+fit.8 <- glmmTMB(SEOT ~ (1 | site) + year + (1 | season) + blob*avg_temp, data = friday, family = nbinom2(), REML = TRUE, offset = log(area))
+
+
+list(
+  fit.1,
+  fit.2, 
+  fit.3,
+  fit.4,
+  fit.5,
+  fit.6,
+  fit.7,
+  fit.8
+) %>%
+  AICcmodavg::aictab()
+```
+```{r}
+summary(fit.5)
+```
+
+```{r}
+plot(predict_response(fit.8))
 ```
 
